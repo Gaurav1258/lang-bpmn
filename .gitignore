@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / Frontend & Build Artifacts
+node_modules/
+*/node_modules/
+dist/
+*/dist/
+.agents/
+*.log
