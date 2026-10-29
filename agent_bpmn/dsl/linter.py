@@ -21,8 +21,8 @@ class LintResult:
 class WorkflowLinter:
     """
     Static analyzer for WorkflowDefinition ASTs.
-    Catches disconnected nodes, broken edges, missing blocks, and contract mismatches
-    before compiling to LangGraph runtime.
+    Catches disconnected nodes, broken edges, missing blocks, invalid DMN rules,
+    and contract mismatches before compiling to LangGraph runtime.
     """
 
     def __init__(self, registry: Optional[CapabilityRegistry] = None) -> None:
@@ -45,7 +45,11 @@ class WorkflowLinter:
             seen_ids.add(node.id)
             node_map[node.id] = node
 
-        # 2. Block validation
+        valid_endpoints = seen_ids.union({"START", "END"})
+        incoming = {nid: 0 for nid in seen_ids}
+        outgoing = {nid: 0 for nid in seen_ids}
+
+        # 2. Node-specific validations
         for node in workflow.nodes:
             if node.type == NodeType.BLOCK:
                 if not node.block:
@@ -56,7 +60,6 @@ class WorkflowLinter:
                         f"Ensure the capability is registered in the CapabilityRegistry."
                     )
                 else:
-                    # Validate input contract mapping
                     registered = self.registry.get(node.block)
                     contract = registered.contract
                     required_inputs = set(contract.input_schema.get("required", []))
@@ -68,22 +71,58 @@ class WorkflowLinter:
                             f"These must exist as matching keys in the graph state at runtime."
                         )
 
+            elif node.type == NodeType.DMN_TABLE:
+                if not node.dmn_config:
+                    errors.append(f"DMN table node '{node.id}' requires a 'dmn_config' specification.")
+                else:
+                    for idx, rule in enumerate(node.dmn_config.rules):
+                        if rule.target not in valid_endpoints:
+                            errors.append(
+                                f"DMN table '{node.id}' rule #{idx} targets unknown node '{rule.target}'."
+                            )
+                        elif rule.target in incoming:
+                            incoming[rule.target] += 1
+                        outgoing[node.id] += 1
+
+                    if node.dmn_config.default_target:
+                        if node.dmn_config.default_target not in valid_endpoints:
+                            errors.append(
+                                f"DMN table '{node.id}' default_target '{node.dmn_config.default_target}' is unknown."
+                            )
+                        elif node.dmn_config.default_target in incoming:
+                            incoming[node.dmn_config.default_target] += 1
+                        outgoing[node.id] += 1
+
+            elif node.type == NodeType.SEMANTIC_ROUTER:
+                if not node.semantic_config:
+                    errors.append(f"Semantic router node '{node.id}' requires a 'semantic_config' specification.")
+                else:
+                    for route in node.semantic_config.routes:
+                        if route.target not in valid_endpoints:
+                            errors.append(
+                                f"Semantic router '{node.id}' route '{route.id}' targets unknown node '{route.target}'."
+                            )
+                        elif route.target in incoming:
+                            incoming[route.target] += 1
+                        outgoing[node.id] += 1
+
+                    if node.semantic_config.default_target:
+                        if node.semantic_config.default_target not in valid_endpoints:
+                            errors.append(
+                                f"Semantic router '{node.id}' default_target '{node.semantic_config.default_target}' is unknown."
+                            )
+                        elif node.semantic_config.default_target in incoming:
+                            incoming[node.semantic_config.default_target] += 1
+                        outgoing[node.id] += 1
+
         # 3. Edge validation
-        valid_endpoints = seen_ids.union({"START", "END"})
         for idx, edge in enumerate(workflow.edges):
             if edge.source not in valid_endpoints:
                 errors.append(f"Edge #{idx} has invalid source '{edge.source}'. Must be 'START' or a known node ID.")
             if edge.target not in valid_endpoints:
                 errors.append(f"Edge #{idx} has invalid target '{edge.target}'. Must be 'END' or a known node ID.")
 
-        # 4. Topology & reachability
-        incoming = {nid: 0 for nid in seen_ids}
-        outgoing = {nid: 0 for nid in seen_ids}
-
-        has_start_edge = False
-        for edge in workflow.edges:
             if edge.source == "START":
-                has_start_edge = True
                 if edge.target in incoming:
                     incoming[edge.target] += 1
             elif edge.source in outgoing:
@@ -92,12 +131,10 @@ class WorkflowLinter:
             if edge.target != "END" and edge.target in incoming:
                 incoming[edge.target] += 1
 
-        # Check for disconnected or dead-end nodes
+        # 4. Topology & reachability warnings
+        has_start_edge = any(e.source == "START" for e in workflow.edges)
         for nid, count in incoming.items():
-            if count == 0 and not has_start_edge:
-                # If no explicit START edge, check if node is intended entrypoint
-                pass
-            elif count == 0 and has_start_edge:
+            if count == 0 and has_start_edge:
                 warnings.append(f"Node '{nid}' has no incoming edges and is unreachable from START.")
 
         for nid, count in outgoing.items():
@@ -107,4 +144,3 @@ class WorkflowLinter:
 
         is_valid = len(errors) == 0
         return LintResult(is_valid=is_valid, errors=errors, warnings=warnings)
-

@@ -125,6 +125,19 @@ async def extract_invoice(payload: InvoiceExtractInput) -> InvoiceExtractOutput:
     """
     await asyncio.sleep(0.08)
 
+    doc_lower = payload.document_url.lower()
+    if "suspicious" in doc_lower or "redstar" in doc_lower:
+        return InvoiceExtractOutput(
+            invoice_number="INV-2026-SUSP-01",
+            vendor_name="RedStar Maritime Ltd (Cargo Delivery)",
+            total_amount_usd=85000.00,
+            currency="USD",
+            line_items=[
+                InvoiceLineItem(description="Maritime Vessel Fuel & Cargo", quantity=1, unit_price_usd=85000.00, total_usd=85000.00),
+            ],
+            confidence_score=0.94,
+        )
+
     # In production, this would invoke Claude 3.5 Sonnet / Gemini Vision with OCR tools
     return InvoiceExtractOutput(
         invoice_number="INV-2026-9812",
@@ -199,4 +212,77 @@ def triage_ticket(payload: SupportTicketInput) -> SupportTicketOutput:
         sentiment_score=sentiment,
         recommended_routing=routing,
     )
+
+
+# ==============================================================================
+# 4. Finance Department: Automated Payment Settlement
+# ==============================================================================
+
+class SettlementInput(BaseModel):
+    invoice_number: str
+    amount_usd: float
+    vendor_name: str
+
+
+class SettlementOutput(BaseModel):
+    transaction_id: str
+    status: str
+    settled_amount: float
+    settlement_timestamp: str
+
+
+@domain_block(
+    id="finance.auto_settlement",
+    name="Auto-Settle Invoice Payment",
+    department="Finance",
+    description="Dispatches automated ACH/Wire payment for approved invoices.",
+    icon="credit-card",
+    estimated_cost_usd=0.001,
+    p95_latency_ms=450,
+    tags=["finance", "payments", "settlement"],
+)
+async def auto_settlement(payload: SettlementInput) -> SettlementOutput:
+    await asyncio.sleep(0.02)
+    return SettlementOutput(
+        transaction_id=f"TXN-ACH-2026-{payload.invoice_number.replace('-', '')}",
+        status="SETTLED_AUTOMATICALLY",
+        settled_amount=payload.amount_usd,
+        settlement_timestamp="2026-10-29T22:50:00Z",
+    )
+
+
+# ==============================================================================
+# 5. Compliance Department: L2 Emergency Review Dispatch
+# ==============================================================================
+
+class EmergencyReviewInput(BaseModel):
+    entity_name: str
+    risk_score: float
+    flag_reason: str
+
+
+class EmergencyReviewOutput(BaseModel):
+    case_docket_id: str
+    assigned_queue: str
+    status: str
+
+
+@domain_block(
+    id="compliance.emergency_review",
+    name="Escalate to L2 Sanctions Review",
+    department="Compliance",
+    description="Opens an expedited compliance docket and notifies the Chief Compliance Officer.",
+    icon="alert-octagon",
+    estimated_cost_usd=0.002,
+    p95_latency_ms=300,
+    tags=["compliance", "audit", "escalation"],
+)
+async def emergency_review(payload: EmergencyReviewInput) -> EmergencyReviewOutput:
+    await asyncio.sleep(0.02)
+    return EmergencyReviewOutput(
+        case_docket_id=f"CASE-L2-{payload.entity_name[:4].upper()}-991",
+        assigned_queue="HIGH_PRIORITY_SANCTIONS_QUEUE",
+        status="PENDING_SENIOR_OFFICER_SIGN_OFF",
+    )
+
 

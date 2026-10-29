@@ -7,7 +7,12 @@ from agent_bpmn.dsl.parser import (
     parse_workflow_yaml,
 )
 from agent_bpmn.dsl.schema import (
+    DMNRule,
+    DMNTableConfig,
+    HitPolicy,
     NodeType,
+    SemanticRoute,
+    SemanticRouterConfig,
     WorkflowDefinition,
     WorkflowEdge,
     WorkflowGuardrails,
@@ -17,6 +22,11 @@ from agent_bpmn.dsl.schema import (
 
 __all__ = [
     "NodeType",
+    "HitPolicy",
+    "DMNRule",
+    "DMNTableConfig",
+    "SemanticRoute",
+    "SemanticRouterConfig",
     "WorkflowMetadata",
     "WorkflowGuardrails",
     "WorkflowNode",
@@ -30,4 +40,3 @@ __all__ = [
     "LintResult",
     "WorkflowLinter",
 ]
-

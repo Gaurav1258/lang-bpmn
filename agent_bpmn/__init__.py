@@ -3,9 +3,25 @@ AgentBPMN (lang-bpmn)
 Enterprise Process Orchestration & Governance for AI Agents.
 """
 
-from agent_bpmn.compiler import CompiledWorkflow, GraphCompiler
+from agent_bpmn.compiler import (
+    CompilationError,
+    CompiledWorkflow,
+    DMNCompilationError,
+    GraphCompiler,
+    SafeEvaluationError,
+    SafeExpressionEvaluator,
+    SemanticCompilationError,
+    SemanticIntentClassifier,
+    compile_dmn_table_router,
+    compile_semantic_router,
+)
 from agent_bpmn.dsl import (
+    DMNRule,
+    DMNTableConfig,
+    HitPolicy,
     NodeType,
+    SemanticRoute,
+    SemanticRouterConfig,
     WorkflowDefinition,
     WorkflowEdge,
     WorkflowGuardrails,
@@ -28,7 +44,7 @@ from agent_bpmn.sdk import (
     registry,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "domain_block",
@@ -45,6 +61,11 @@ __all__ = [
     "WorkflowNode",
     "WorkflowEdge",
     "NodeType",
+    "HitPolicy",
+    "DMNRule",
+    "DMNTableConfig",
+    "SemanticRoute",
+    "SemanticRouterConfig",
     "parse_workflow_yaml",
     "parse_workflow_json",
     "dump_workflow_yaml",
@@ -52,4 +73,11 @@ __all__ = [
     "WorkflowLinter",
     "GraphCompiler",
     "CompiledWorkflow",
+    "SafeExpressionEvaluator",
+    "SafeEvaluationError",
+    "DMNCompilationError",
+    "compile_dmn_table_router",
+    "SemanticCompilationError",
+    "SemanticIntentClassifier",
+    "compile_semantic_router",
 ]

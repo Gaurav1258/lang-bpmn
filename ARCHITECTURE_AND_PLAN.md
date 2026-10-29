@@ -316,15 +316,11 @@ lang-bpmn/
 │
 ├── verify_domain_blocks.py        # Domain block verification & demo script
 ├── verify_workflow_compiler.py    # Declarative compiler verification script
+├── verify_hybrid_routing.py       # Hybrid routing (DMN + Semantic) verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
-    ├── test_dsl_parser.py
-    ├── test_compiler.py
-    ├── test_dmn_routing.py
-    ├── test_hitl_interrupt.py
-    ├── test_guardrails.py
-    └── test_simulation.py
+    ├── test_hybrid_routing.py
 ```
 
 ---
@@ -344,10 +340,12 @@ lang-bpmn/
 * [x] Verification runner (`verify_workflow_compiler.py`) demonstrated in visible terminal.
 
 ### Phase 3: Hybrid Routing (DMN Decision Tables + Semantic Enums)
-* [ ] Implement safe DMN expression evaluator supporting comparison, logical operators, and regex.
-* [ ] Wire DMN tables to LangGraph `add_conditional_edges()`.
-* [ ] Implement Semantic Intent Router synthesizer: automatically generates Pydantic enum & prompt for structured output routing.
-* [ ] Test complex conditional graphs with both deterministic and semantic forks.
+* [x] Implement safe DMN expression evaluator supporting comparison, logical operators, and regex.
+* [x] Wire DMN tables to LangGraph `add_conditional_edges()`.
+* [x] Implement Semantic Intent Router synthesizer: automatically generates route classifiers.
+* [x] Test complex conditional graphs with both deterministic and semantic forks.
+* [x] Automated unit test suite (`tests/test_hybrid_routing.py`) passing 100%.
+* [x] Verification runner (`verify_hybrid_routing.py`) demonstrated in visible terminal.
 
 ### Phase 4: Enterprise Human-in-the-Loop (HITL) Task Engine
 * [ ] Implement `HumanReviewNode` compiler integration using LangGraph `interrupt_before`.

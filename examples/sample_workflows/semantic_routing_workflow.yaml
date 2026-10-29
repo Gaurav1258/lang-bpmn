@@ -1,0 +1,94 @@
+version: "1.0"
+metadata:
+  id: "customer_support_semantic_routing"
+  name: "Support Inbound Semantic Intent Routing"
+  version: "1.0.0"
+  description: "Routes incoming customer messages based on natural language intent classification to the appropriate departmental queue."
+  owner_department: "Customer Operations"
+
+guardrails:
+  max_total_budget_usd: 0.05
+  workflow_timeout_seconds: 600
+  max_loop_iterations: 1
+
+nodes:
+  - id: "support_semantic_router"
+    type: "semantic_router"
+    name: "Customer Intent Semantic Router"
+    semantic_config:
+      input_field: "customer_message"
+      routes:
+        - id: "billing_inquiry"
+          description: "Customer questions charges, invoices, payment receipts, or disputed subscription billing"
+          target: "billing_queue"
+
+        - id: "cancellation_churn"
+          description: "Customer wants to cancel account, close subscription, or leave the platform"
+          target: "retention_queue"
+
+        - id: "technical_incident"
+          description: "Technical failure, system outage, 500 error, broken integration, or API down"
+          target: "engineering_escalation_queue"
+
+      default_target: "general_support_queue"
+
+  - id: "billing_queue"
+    type: "block"
+    name: "Billing Queue Triage"
+    block: "support.ticket_triage"
+    input_mapping:
+      customer_email: "$sender_email"
+      subject: "Billing Inquiry"
+      message_body: "$customer_message"
+      account_tier: "$tier"
+    output_mapping:
+      recommended_routing: "final_queue_routed"
+
+  - id: "retention_queue"
+    type: "block"
+    name: "Retention Queue Triage"
+    block: "support.ticket_triage"
+    input_mapping:
+      customer_email: "$sender_email"
+      subject: "Churn Retention"
+      message_body: "$customer_message"
+      account_tier: "$tier"
+    output_mapping:
+      recommended_routing: "final_queue_routed"
+
+  - id: "engineering_escalation_queue"
+    type: "block"
+    name: "Engineering Triage"
+    block: "support.ticket_triage"
+    input_mapping:
+      customer_email: "$sender_email"
+      subject: "Technical Outage"
+      message_body: "$customer_message"
+      account_tier: "$tier"
+    output_mapping:
+      recommended_routing: "final_queue_routed"
+
+  - id: "general_support_queue"
+    type: "block"
+    name: "General Support Triage"
+    block: "support.ticket_triage"
+    input_mapping:
+      customer_email: "$sender_email"
+      subject: "General Question"
+      message_body: "$customer_message"
+      account_tier: "$tier"
+    output_mapping:
+      recommended_routing: "final_queue_routed"
+
+edges:
+  - source: "START"
+    target: "support_semantic_router"
+  - source: "billing_queue"
+    target: "END"
+  - source: "retention_queue"
+    target: "END"
+  - source: "engineering_escalation_queue"
+    target: "END"
+  - source: "general_support_queue"
+    target: "END"
+

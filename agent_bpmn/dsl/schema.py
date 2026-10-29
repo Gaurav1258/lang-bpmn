@@ -6,9 +6,54 @@ from pydantic import BaseModel, ConfigDict, Field
 class NodeType(str, Enum):
     START = "start"
     BLOCK = "block"
-    ROUTER = "router"
+    DMN_TABLE = "dmn_table"
+    SEMANTIC_ROUTER = "semantic_router"
     HUMAN_REVIEW = "human_review"
     END = "end"
+
+
+class HitPolicy(str, Enum):
+    FIRST_MATCH = "FIRST_MATCH"
+    PRIORITY = "PRIORITY"
+
+
+class DMNRule(BaseModel):
+    """A single decision rule in a DMN table."""
+    model_config = ConfigDict(extra="ignore")
+
+    condition: Optional[str] = Field(
+        default=None,
+        description="Boolean condition expression, e.g. 'amount > 10000 and risk == \"HIGH\"'. If None, acts as fallback.",
+    )
+    target: str = Field(..., description="Target node ID or 'END' to route to when condition is met")
+    description: Optional[str] = Field(default=None, description="Human-readable business explanation for the rule")
+
+
+class DMNTableConfig(BaseModel):
+    """Configuration for a Deterministic DMN Decision Table node."""
+    model_config = ConfigDict(extra="ignore")
+
+    hit_policy: HitPolicy = Field(default=HitPolicy.FIRST_MATCH, description="Evaluation strategy")
+    rules: List[DMNRule] = Field(default_factory=list, description="Ordered list of decision rules")
+    default_target: Optional[str] = Field(default=None, description="Fallback target if no rules match")
+
+
+class SemanticRoute(BaseModel):
+    """A single natural language classification bucket."""
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., description="Route identifier, e.g. 'billing_inquiry'")
+    description: str = Field(..., description="Natural language description of customer/user intent")
+    target: str = Field(..., description="Target node ID or 'END'")
+
+
+class SemanticRouterConfig(BaseModel):
+    """Configuration for an LLM-powered Semantic Intent Router node."""
+    model_config = ConfigDict(extra="ignore")
+
+    input_field: str = Field(..., description="Graph state key holding the text content to classify")
+    routes: List[SemanticRoute] = Field(default_factory=list, description="List of semantic routes")
+    default_target: Optional[str] = Field(default=None, description="Fallback target if intent is ambiguous")
 
 
 class WorkflowMetadata(BaseModel):
@@ -34,7 +79,7 @@ class WorkflowGuardrails(BaseModel):
 class WorkflowNode(BaseModel):
     """
     A single node in the declarative workflow topology.
-    Can represent a Domain Block, Router, Human Review, or Gateway.
+    Can represent a Domain Block, DMN Table, Semantic Router, Human Review, or Gateway.
     """
     model_config = ConfigDict(extra="ignore")
 
@@ -50,6 +95,8 @@ class WorkflowNode(BaseModel):
         default_factory=dict,
         description="Maps the block's output attributes back into the graph state keys",
     )
+    dmn_config: Optional[DMNTableConfig] = Field(default=None, description="Decision rules if type='dmn_table'")
+    semantic_config: Optional[SemanticRouterConfig] = Field(default=None, description="Semantic routes if type='semantic_router'")
     config: Dict[str, Any] = Field(default_factory=dict, description="Node-specific configuration parameters")
 
 
@@ -75,4 +122,3 @@ class WorkflowDefinition(BaseModel):
     guardrails: WorkflowGuardrails = Field(default_factory=WorkflowGuardrails)
     nodes: List[WorkflowNode] = Field(default_factory=list)
     edges: List[WorkflowEdge] = Field(default_factory=list)
-

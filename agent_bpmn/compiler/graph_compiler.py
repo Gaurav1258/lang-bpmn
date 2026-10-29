@@ -4,6 +4,8 @@ from typing import Any, Callable, Dict, Optional, Union
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
+from agent_bpmn.compiler.dmn_compiler import compile_dmn_table_router
+from agent_bpmn.compiler.semantic_compiler import compile_semantic_router
 from agent_bpmn.dsl.linter import WorkflowLinter
 from agent_bpmn.dsl.schema import NodeType, WorkflowDefinition
 from agent_bpmn.sdk.registry import CapabilityRegistry, registry as default_registry
@@ -35,7 +37,6 @@ class CompiledWorkflow:
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Asynchronously executes the compiled workflow with the given initial state."""
-        # Ensure telemetry dictionary is initialized in state
         state_payload = dict(initial_state)
         if "__telemetry__" not in state_payload:
             state_payload["__telemetry__"] = {}
@@ -62,7 +63,8 @@ class CompiledWorkflow:
 class GraphCompiler:
     """
     Compiles an AgentBPMN declarative WorkflowDefinition AST directly
-    into a LangGraph StateGraph execution graph.
+    into a LangGraph StateGraph execution graph supporting hybrid routing
+    (DMN Decision Tables + Semantic Intent Classifiers).
     """
 
     def __init__(
@@ -83,26 +85,44 @@ class GraphCompiler:
             lint_res.raise_if_invalid()
 
         builder = StateGraph(dict)
+        connected_sources = set()
+        connected_targets = set()
 
-        # 1. Register Nodes
+        # Helper for router pass-through nodes
+        def make_passthrough_node(node_id: str) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+            def passthrough(state: Dict[str, Any]) -> Dict[str, Any]:
+                history = list(state.get("__history__", []))
+                history.append(node_id)
+                return {**state, "__history__": history}
+            return passthrough
+
+        # 1. Register Nodes & Conditional Routers
         for node in workflow.nodes:
             if node.type == NodeType.BLOCK:
                 handler = self._create_block_node_handler(node)
                 builder.add_node(node.id, handler)
-            elif node.type == NodeType.START:
-                # Synthetic start node (pass-through)
-                builder.add_node(node.id, lambda state: state)
-            elif node.type == NodeType.END:
-                # Synthetic end node (pass-through)
-                builder.add_node(node.id, lambda state: state)
+
+            elif node.type == NodeType.DMN_TABLE:
+                builder.add_node(node.id, make_passthrough_node(node.id))
+                if node.dmn_config:
+                    router_fn, path_map = compile_dmn_table_router(node.dmn_config, table_id=node.id)
+                    builder.add_conditional_edges(node.id, router_fn, path_map)
+                    connected_sources.add(node.id)
+
+            elif node.type == NodeType.SEMANTIC_ROUTER:
+                builder.add_node(node.id, make_passthrough_node(node.id))
+                if node.semantic_config:
+                    router_fn, path_map = compile_semantic_router(node.semantic_config, router_id=node.id)
+                    builder.add_conditional_edges(node.id, router_fn, path_map)
+                    connected_sources.add(node.id)
+
+            elif node.type in (NodeType.START, NodeType.END):
+                builder.add_node(node.id, make_passthrough_node(node.id))
+
             else:
-                # Placeholder for Routers and HITL (extended in subsequent phases)
-                builder.add_node(node.id, lambda state: state)
+                builder.add_node(node.id, make_passthrough_node(node.id))
 
-        # 2. Wire Edges
-        connected_sources = set()
-        connected_targets = set()
-
+        # 2. Wire Standard Directed Edges
         for edge in workflow.edges:
             src = START if edge.source == "START" else edge.source
             tgt = END if edge.target == "END" else edge.target
@@ -113,15 +133,13 @@ class GraphCompiler:
 
         # 3. Auto-infer entrypoint if not explicitly defined
         if "START" not in connected_sources:
-            # Entrypoint is the first node with in-degree 0
             candidate_starts = [n.id for n in workflow.nodes if n.id not in connected_targets]
             if candidate_starts:
-                entrypoint = candidate_starts[0]
-                builder.add_edge(START, entrypoint)
+                builder.add_edge(START, candidate_starts[0])
             elif workflow.nodes:
                 builder.add_edge(START, workflow.nodes[0].id)
 
-        # 4. Auto-infer exit edges if not explicitly defined
+        # 4. Auto-infer exit edges for nodes without outgoing links
         for node in workflow.nodes:
             if node.id not in connected_sources and node.type != NodeType.END:
                 builder.add_edge(node.id, END)
@@ -173,7 +191,6 @@ class GraphCompiler:
                     if block_attr in output_dict:
                         state_updates[target_state_key] = output_dict[block_attr]
             else:
-                # Default: store under node_id and expose top-level keys
                 state_updates[node.id] = output_dict
                 for k, v in output_dict.items():
                     if k not in state_updates:
