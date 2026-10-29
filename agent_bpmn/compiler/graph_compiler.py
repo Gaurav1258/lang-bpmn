@@ -8,10 +8,20 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
 
 from agent_bpmn.compiler.dmn_compiler import compile_dmn_table_router
+from agent_bpmn.compiler.guardrails import (
+    BudgetExceededError,
+    GuardrailViolationError,
+    LoopIterationLimitExceeded,
+)
 from agent_bpmn.compiler.semantic_compiler import compile_semantic_router
 from agent_bpmn.dsl.linter import WorkflowLinter
 from agent_bpmn.dsl.schema import NodeType, WorkflowDefinition
 from agent_bpmn.runtime.hitl_inbox import ApprovalInboxService, inbox_service as default_inbox_service
+from agent_bpmn.runtime.telemetry import (
+    TelemetryAggregator,
+    WorkflowHeatmap,
+    telemetry_aggregator as default_telemetry_aggregator,
+)
 from agent_bpmn.sdk.registry import CapabilityRegistry, registry as default_registry
 
 
@@ -23,6 +33,8 @@ class CompilationError(Exception):
 class CompiledWorkflow:
     """
     An executable AgentBPMN workflow compiled into a LangGraph StateGraph runtime.
+    Features automated state merging, checkpoint resumption, guardrail enforcement,
+    and Process Intelligence Heatmap aggregation.
     """
 
     def __init__(
@@ -31,11 +43,13 @@ class CompiledWorkflow:
         state_graph: StateGraph,
         compiled_graph: Any,
         inbox_service: ApprovalInboxService,
+        telemetry_aggregator: TelemetryAggregator,
     ) -> None:
         self.workflow = workflow
         self.state_graph = state_graph
         self.compiled_graph = compiled_graph
         self.inbox_service = inbox_service
+        self.telemetry_aggregator = telemetry_aggregator
 
     async def ainvoke(
         self,
@@ -50,46 +64,59 @@ class CompiledWorkflow:
             run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
 
         thread_id = run_config["configurable"]["thread_id"]
+        t0 = time.perf_counter()
 
         if isinstance(initial_state, Command):
-            # Resuming an interrupted workflow
-            return await self.compiled_graph.ainvoke(initial_state, config=run_config)
+            res = await self.compiled_graph.ainvoke(initial_state, config=run_config)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            self.telemetry_aggregator.record_from_state(
+                self.workflow.metadata.id, res, status="COMPLETED", total_duration_ms=elapsed_ms
+            )
+            return res
 
-        # Fresh execution
         state_payload = dict(initial_state)
         state_payload["__thread_id__"] = thread_id
         if "__telemetry__" not in state_payload:
             state_payload["__telemetry__"] = {}
         if "__history__" not in state_payload:
             state_payload["__history__"] = []
+        if "__sys_node_visits" not in state_payload:
+            state_payload["__sys_node_visits"] = {}
+        if "__sys_total_cost_usd" not in state_payload:
+            state_payload["__sys_total_cost_usd"] = 0.0
 
-        return await self.compiled_graph.ainvoke(state_payload, config=run_config)
+        res = await self.compiled_graph.ainvoke(state_payload, config=run_config)
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        status = "INTERRUPTED" if "__interrupt__" in res and res["__interrupt__"] else "COMPLETED"
+        self.telemetry_aggregator.record_from_state(
+            self.workflow.metadata.id, res, status=status, total_duration_ms=elapsed_ms
+        )
+        return res
 
     def invoke(
         self,
         initial_state: Union[Dict[str, Any], Command],
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Synchronously executes the compiled workflow."""
-        run_config = dict(config or {})
-        if "configurable" not in run_config:
-            run_config["configurable"] = {}
-        if "thread_id" not in run_config["configurable"]:
-            run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
+        """Synchronously executes the compiled workflow, bridging to async execution."""
+        import asyncio
+        import concurrent.futures
 
-        thread_id = run_config["configurable"]["thread_id"]
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
 
-        if isinstance(initial_state, Command):
-            return self.compiled_graph.invoke(initial_state, config=run_config)
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(asyncio.run, self.ainvoke(initial_state, config=config))
+                return future.result()
+        else:
+            return asyncio.run(self.ainvoke(initial_state, config=config))
 
-        state_payload = dict(initial_state)
-        state_payload["__thread_id__"] = thread_id
-        if "__telemetry__" not in state_payload:
-            state_payload["__telemetry__"] = {}
-        if "__history__" not in state_payload:
-            state_payload["__history__"] = []
-
-        return self.compiled_graph.invoke(state_payload, config=run_config)
+    def get_heatmap(self) -> WorkflowHeatmap:
+        """Computes and returns the visual Process Intelligence Heatmap for this workflow."""
+        return self.telemetry_aggregator.get_heatmap(self.workflow.metadata.id)
 
 
 class GraphCompiler:
@@ -99,6 +126,8 @@ class GraphCompiler:
     - Domain Blocks with Pydantic contracts
     - Hybrid Routing (DMN Tables + Semantic Routers)
     - Enterprise Human-in-the-Loop Approval Inboxes with Command(resume=...)
+    - Visual Loop & Budget Guardrails (Loop iteration caps & USD spend limits)
+    - Process Intelligence Heatmap Telemetry
     """
 
     def __init__(
@@ -106,10 +135,12 @@ class GraphCompiler:
         registry: Optional[CapabilityRegistry] = None,
         checkpointer: Optional[BaseCheckpointSaver] = None,
         inbox_service: Optional[ApprovalInboxService] = None,
+        telemetry_aggregator: Optional[TelemetryAggregator] = None,
     ) -> None:
         self.registry = registry if registry is not None else default_registry
         self.checkpointer = checkpointer or MemorySaver()
         self.inbox_service = inbox_service or default_inbox_service
+        self.telemetry_aggregator = telemetry_aggregator or default_telemetry_aggregator
         self.linter = WorkflowLinter(registry=self.registry)
 
     def compile(self, workflow: WorkflowDefinition, validate: bool = True) -> CompiledWorkflow:
@@ -134,7 +165,7 @@ class GraphCompiler:
         # 1. Register Nodes
         for node in workflow.nodes:
             if node.type == NodeType.BLOCK:
-                handler = self._create_block_node_handler(node)
+                handler = self._create_block_node_handler(node, workflow)
                 builder.add_node(node.id, handler)
 
             elif node.type == NodeType.DMN_TABLE:
@@ -190,6 +221,7 @@ class GraphCompiler:
             state_graph=builder,
             compiled_graph=compiled_graph,
             inbox_service=self.inbox_service,
+            telemetry_aggregator=self.telemetry_aggregator,
         )
 
     def _create_human_review_node_handler(
@@ -213,7 +245,6 @@ class GraphCompiler:
             thread_id = state.get("__thread_id__", f"thread_{uuid.uuid4().hex[:8]}")
             clean_state = {k: v for k, v in state.items() if not k.startswith("__")}
 
-            # Register task in the Enterprise Task Inbox
             task = inbox.create_task(
                 thread_id=thread_id,
                 workflow_id=workflow_id,
@@ -228,7 +259,6 @@ class GraphCompiler:
                 form_fields=form_fields,
             )
 
-            # Pause execution via LangGraph interrupt
             decision = interrupt({
                 "task_id": task.task_id,
                 "title": title,
@@ -237,7 +267,6 @@ class GraphCompiler:
                 "allowed_actions": allowed_actions,
             })
 
-            # Resumed via Command(resume=decision_payload)
             action = decision.get("action", "APPROVE")
             reviewer = decision.get("reviewer", "human_reviewer")
             comments = decision.get("comments")
@@ -251,7 +280,6 @@ class GraphCompiler:
                 "last_reviewer": reviewer,
             }
 
-            # Apply any human edits directly into graph state
             if updated_fields and isinstance(updated_fields, dict):
                 state_updates.update(updated_fields)
 
@@ -263,16 +291,40 @@ class GraphCompiler:
 
         return human_review_handler
 
-    def _create_block_node_handler(self, node: Any) -> Callable[[Dict[str, Any]], Any]:
-        """Creates an async LangGraph node function that bridges graph state to a certified Domain Block."""
+    def _create_block_node_handler(
+        self,
+        node: Any,
+        workflow: WorkflowDefinition,
+    ) -> Callable[[Dict[str, Any]], Any]:
+        """Creates an async LangGraph node function with strict loop & budget guardrails."""
         block_id = node.block
         reg = self.registry
 
         async def block_node_handler(state: Dict[str, Any]) -> Dict[str, Any]:
-            # 1. Extract and map inputs from graph state
-            payload: Dict[str, Any] = {}
+            state_updates: Dict[str, Any] = {}
 
-            # Apply explicit input mapping
+            # 1. Loop Guardrail Check
+            visits_map = dict(state.get("__sys_node_visits", {}))
+            current_visits = visits_map.get(node.id, 0) + 1
+            visits_map[node.id] = current_visits
+            state_updates["__sys_node_visits"] = visits_map
+
+            max_visits = node.max_retries if node.max_retries is not None else workflow.guardrails.max_loop_iterations
+            if current_visits > max_visits:
+                raise LoopIterationLimitExceeded(node.id, current_visits, max_visits)
+
+            # 2. Budget Guardrail Check
+            registered = reg.get(block_id)
+            node_cost = registered.contract.metadata.estimated_cost_usd
+            current_total_cost = float(state.get("__sys_total_cost_usd", 0.0)) + node_cost
+            state_updates["__sys_total_cost_usd"] = round(current_total_cost, 6)
+
+            max_budget = workflow.guardrails.max_total_budget_usd
+            if max_budget is not None and current_total_cost > max_budget:
+                raise BudgetExceededError(current_total_cost, max_budget, node.id)
+
+            # 3. Extract and map inputs from graph state
+            payload: Dict[str, Any] = {}
             for block_param, mapping_spec in node.input_mapping.items():
                 if isinstance(mapping_spec, str) and mapping_spec.startswith("$"):
                     state_key = mapping_spec.lstrip("$").replace("state.", "")
@@ -282,21 +334,18 @@ class GraphCompiler:
                 else:
                     payload[block_param] = mapping_spec
 
-            # For unmapped required block properties, pull matching keys from state
-            registered = reg.get(block_id)
             input_props = registered.contract.input_schema.get("properties", {}).keys()
             for prop in input_props:
                 if prop not in payload and prop in state:
                     payload[prop] = state[prop]
 
-            # 2. Execute block with strict runtime Pydantic validation
+            # 4. Execute block with strict runtime Pydantic validation
             t0 = time.perf_counter()
             output_model = await reg.execute(block_id, payload)
             elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
             output_dict = output_model.model_dump()
 
-            # 3. Map output attributes back to graph state
-            state_updates: Dict[str, Any] = {}
+            # 5. Map output attributes back to graph state
             if node.output_mapping:
                 for block_attr, target_state_key in node.output_mapping.items():
                     if block_attr in output_dict:
@@ -307,11 +356,12 @@ class GraphCompiler:
                     if k not in state_updates:
                         state_updates[k] = v
 
-            # 4. Telemetry tracking
+            # 6. Telemetry tracking
             telemetry = dict(state.get("__telemetry__", {}))
             telemetry[node.id] = {
                 "block": block_id,
                 "latency_ms": elapsed_ms,
+                "cost_usd": node_cost,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }
             state_updates["__telemetry__"] = telemetry
@@ -321,7 +371,6 @@ class GraphCompiler:
             history.append(node.id)
             state_updates["__history__"] = history
 
-            # Return merged state to preserve full context across nodes in LangGraph
             return {**state, **state_updates}
 
         return block_node_handler

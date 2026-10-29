@@ -1,0 +1,60 @@
+version: "1.0"
+metadata:
+  id: "guardrailed_cyclic_feedback_flow"
+  name: "Guardrailed Cyclic Invoicing Pipeline"
+  version: "1.4.0"
+  description: "Demonstrates cyclic refinement loops with management-controlled iteration bounds and hard USD budget caps."
+  owner_department: "Finance Operations"
+
+guardrails:
+  max_total_budget_usd: 0.05  # Circuit breaker trips if spend exceeds 5 cents
+  workflow_timeout_seconds: 600
+  max_loop_iterations: 3      # Maximum 3 retries on cyclic edges
+
+nodes:
+  - id: "extract_invoice"
+    type: "block"
+    name: "Extract Invoice Line Items"
+    block: "finance.invoice_extractor"
+    max_retries: 3
+    input_mapping:
+      document_url: "$invoice_pdf_url"
+      vendor_tax_id: "$tax_id"
+    output_mapping:
+      invoice_number: "invoice_number"
+      vendor_name: "vendor_name"
+      total_amount_usd: "invoice_total_usd"
+      confidence_score: "extraction_confidence"
+
+  - id: "quality_gate_dmn"
+    type: "dmn_table"
+    name: "Extraction Confidence Quality Gate"
+    dmn_config:
+      hit_policy: "FIRST_MATCH"
+      rules:
+        # If extraction confidence is below 0.99, retry extraction (cyclic loop!)
+        - condition: "extraction_confidence < 0.99"
+          target: "extract_invoice"
+          description: "Retry extraction if confidence below threshold"
+      default_target: "auto_settlement"
+
+  - id: "auto_settlement"
+    type: "block"
+    name: "Automated Payment Settlement"
+    block: "finance.auto_settlement"
+    input_mapping:
+      invoice_number: "$invoice_number"
+      amount_usd: "$invoice_total_usd"
+      vendor_name: "$vendor_name"
+    output_mapping:
+      transaction_id: "settlement_txn_id"
+      status: "workflow_final_status"
+
+edges:
+  - source: "START"
+    target: "extract_invoice"
+  - source: "extract_invoice"
+    target: "quality_gate_dmn"
+  - source: "auto_settlement"
+    target: "END"
+

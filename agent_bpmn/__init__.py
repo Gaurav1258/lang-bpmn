@@ -4,10 +4,13 @@ Enterprise Process Orchestration & Governance for AI Agents.
 """
 
 from agent_bpmn.compiler import (
+    BudgetExceededError,
     CompilationError,
     CompiledWorkflow,
     DMNCompilationError,
     GraphCompiler,
+    GuardrailViolationError,
+    LoopIterationLimitExceeded,
     SafeEvaluationError,
     SafeExpressionEvaluator,
     SemanticCompilationError,
@@ -37,8 +40,12 @@ from agent_bpmn.dsl import (
 from agent_bpmn.runtime import (
     ApprovalInboxService,
     ApprovalTask,
+    NodeHeatmapMetric,
     TaskStatus,
+    TelemetryAggregator,
+    WorkflowHeatmap,
     inbox_service,
+    telemetry_aggregator,
 )
 from agent_bpmn.sdk import (
     BlockExecutionError,
@@ -51,7 +58,7 @@ from agent_bpmn.sdk import (
     registry,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "domain_block",
@@ -88,8 +95,15 @@ __all__ = [
     "SemanticCompilationError",
     "SemanticIntentClassifier",
     "compile_semantic_router",
+    "BudgetExceededError",
+    "LoopIterationLimitExceeded",
+    "GuardrailViolationError",
     "ApprovalTask",
     "TaskStatus",
     "ApprovalInboxService",
     "inbox_service",
+    "TelemetryAggregator",
+    "telemetry_aggregator",
+    "WorkflowHeatmap",
+    "NodeHeatmapMetric",
 ]

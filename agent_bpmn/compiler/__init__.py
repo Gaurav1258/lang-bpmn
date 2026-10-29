@@ -11,6 +11,11 @@ from agent_bpmn.compiler.graph_compiler import (
     CompiledWorkflow,
     GraphCompiler,
 )
+from agent_bpmn.compiler.guardrails import (
+    BudgetExceededError,
+    GuardrailViolationError,
+    LoopIterationLimitExceeded,
+)
 from agent_bpmn.compiler.semantic_compiler import (
     SemanticCompilationError,
     SemanticIntentClassifier,
@@ -28,4 +33,7 @@ __all__ = [
     "SemanticCompilationError",
     "SemanticIntentClassifier",
     "compile_semantic_router",
+    "BudgetExceededError",
+    "LoopIterationLimitExceeded",
+    "GuardrailViolationError",
 ]

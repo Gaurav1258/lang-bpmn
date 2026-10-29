@@ -318,11 +318,13 @@ lang-bpmn/
 ├── verify_workflow_compiler.py    # Declarative compiler verification script
 ├── verify_hybrid_routing.py       # Hybrid routing (DMN + Semantic) verification script
 ├── verify_approval_inbox.py       # Enterprise HITL & Approval Inbox verification script
+├── verify_guardrails_and_heatmap.py # Guardrails & Process Heatmap verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
     ├── test_hybrid_routing.py
     ├── test_approval_inbox.py
+    └── test_guardrails_and_heatmap.py
 ```
 
 ---
@@ -358,9 +360,11 @@ lang-bpmn/
 * [x] Verification runner (`verify_approval_inbox.py`) demonstrated in visible terminal.
 
 ### Phase 5: Budget Guardrails & Operational Heatmap Telemetry
-* [ ] Inject iteration counter guardrails into cyclic loop edges.
-* [ ] Build token & USD cost tracking interceptor with hard circuit breakers.
-* [ ] Create telemetry aggregation database models (P95 latency, average cost, rejection rate).
+* [x] Inject iteration counter guardrails into cyclic loop edges (`max_loop_iterations` / `max_retries`).
+* [x] Build token & USD cost tracking interceptor with hard circuit breakers (`BudgetExceededError`).
+* [x] Create telemetry aggregation database models (P95 latency, average cost, rejection/override rate).
+* [x] Automated unit test suite (`tests/test_guardrails_and_heatmap.py`) passing 100% (5/5 tests).
+* [x] Verification runner (`verify_guardrails_and_heatmap.py`) demonstrated in visible terminal.
 
 ### Phase 6: Shadow Mode & Pre-Flight Replay Engine
 * [ ] Build checkpointer state replayer to run $N$ historical cases through modified ASTs.

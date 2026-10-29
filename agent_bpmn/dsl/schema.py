@@ -87,9 +87,11 @@ class WorkflowGuardrails(BaseModel):
     """Operational guardrails and budget caps configured by management."""
     model_config = ConfigDict(extra="ignore")
 
-    max_total_budget_usd: Optional[float] = Field(default=None, ge=0.0, description="Hard cap on total USD API spend per execution")
+    max_total_budget_usd: Optional[float] = Field(default=None, ge=0.0, description="Hard cap on total USD spend per execution")
     workflow_timeout_seconds: Optional[int] = Field(default=3600, ge=1, description="Timeout in seconds before halting")
     max_loop_iterations: int = Field(default=10, ge=1, description="Maximum loop iterations across cyclic paths")
+    budget_fallback_target: Optional[str] = Field(default=None, description="Optional target node to route if budget cap is breached")
+    loop_fallback_target: Optional[str] = Field(default=None, description="Optional target node to route if loop limit is breached")
 
 
 class WorkflowNode(BaseModel):
@@ -114,6 +116,7 @@ class WorkflowNode(BaseModel):
     dmn_config: Optional[DMNTableConfig] = Field(default=None, description="Decision rules if type='dmn_table'")
     semantic_config: Optional[SemanticRouterConfig] = Field(default=None, description="Semantic routes if type='semantic_router'")
     human_review_config: Optional[HumanReviewConfig] = Field(default=None, description="HITL approval settings if type='human_review'")
+    max_retries: Optional[int] = Field(default=None, ge=0, description="Optional retry limit for this specific node")
     config: Dict[str, Any] = Field(default_factory=dict, description="Node-specific configuration parameters")
 
 
@@ -125,6 +128,9 @@ class WorkflowEdge(BaseModel):
     source: str = Field(..., description="Source node id, or 'START'")
     target: str = Field(..., description="Target node id, or 'END'")
     condition: Optional[str] = Field(default=None, description="Optional condition rule expression for branching")
+    is_loop_back: bool = Field(default=False, description="True if this edge forms a cyclic retry/refinement loop")
+    max_iterations: Optional[int] = Field(default=None, ge=1, description="Iteration limit for this specific cyclic edge")
+    fallback_target: Optional[str] = Field(default=None, description="Target node if cyclic edge iterations are exhausted")
 
 
 class WorkflowDefinition(BaseModel):

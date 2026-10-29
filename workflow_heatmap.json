@@ -1,0 +1,38 @@
+{
+  "workflow_id": "vendor_invoice_and_compliance",
+  "total_runs": 6,
+  "total_cost_usd": 0.114,
+  "avg_run_cost_usd": 0.019,
+  "node_metrics": {
+    "extract_invoice": {
+      "node_id": "extract_invoice",
+      "call_count": 6,
+      "avg_latency_ms": 469.17,
+      "p95_latency_ms": 2200.0,
+      "avg_cost_usd": 0.015,
+      "total_cost_usd": 0.09,
+      "human_override_rate": 0.0,
+      "bottleneck_level": "WARNING"
+    },
+    "check_sanctions": {
+      "node_id": "check_sanctions",
+      "call_count": 6,
+      "avg_latency_ms": 53.33,
+      "p95_latency_ms": 70.0,
+      "avg_cost_usd": 0.004,
+      "total_cost_usd": 0.024,
+      "human_override_rate": 0.0,
+      "bottleneck_level": "NORMAL"
+    },
+    "l2_human_review": {
+      "node_id": "l2_human_review",
+      "call_count": 6,
+      "avg_latency_ms": 1800.0,
+      "p95_latency_ms": 1800.0,
+      "avg_cost_usd": 0.0,
+      "total_cost_usd": 0.0,
+      "human_override_rate": 0.5,
+      "bottleneck_level": "CRITICAL"
+    }
+  }
+}

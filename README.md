@@ -222,14 +222,16 @@ edges:
 
 ## 🗺️ Project Status & Development Roadmap
 
-See [ARCHITECTURE_AND_PLAN.md](file:///d:/Projects/lang-bpmn/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
+See [ARCHITECTURE_AND_PLAN.md](https://github.com/Gaurav1258/lang-bpmn/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
 
 - [x] **Phase 1: Foundation & Domain Block SDK**
 - [x] **Phase 2: Declarative AST & LangGraph Compiler**
 - [x] **Phase 3: Hybrid Routing (DMN Tables + Semantic Enums)**
 - [x] **Phase 4: Enterprise Human-in-the-Loop Inbox**
-- [ ] **Phase 5: Visual Studio Canvas (React/Vite)**
-- [ ] **Phase 6: Guardrails, Simulation Sandbox & Git Governance**
+- [x] **Phase 5: Budget Guardrails & Operational Heatmap Telemetry**
+- [ ] **Phase 6: Shadow Mode & Pre-Flight Replay Engine**
+- [ ] **Phase 7: Web Studio UI (React + React Flow / BPMN)**
+- [ ] **Phase 8: Git Governance & Enterprise Security**
 
 ---
 
