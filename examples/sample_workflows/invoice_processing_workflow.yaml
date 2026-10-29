@@ -1,0 +1,48 @@
+version: "1.0"
+metadata:
+  id: "vendor_invoice_and_compliance"
+  name: "Vendor Invoice Extraction & Compliance Screening Flow"
+  version: "1.1.0"
+  description: "Automated pipeline parsing vendor invoices and cross-referencing extracted counterparty against international sanctions watchlists."
+  owner_department: "Finance Operations"
+
+guardrails:
+  max_total_budget_usd: 0.20
+  workflow_timeout_seconds: 1800
+  max_loop_iterations: 3
+
+nodes:
+  - id: "extract_invoice"
+    type: "block"
+    name: "Extract Invoice Line Items"
+    block: "finance.invoice_extractor"
+    input_mapping:
+      document_url: "$invoice_pdf_url"
+      vendor_tax_id: "$tax_id"
+    output_mapping:
+      invoice_number: "extracted_invoice_num"
+      vendor_name: "extracted_vendor_name"
+      total_amount_usd: "invoice_total_usd"
+      line_items: "extracted_line_items"
+
+  - id: "check_sanctions"
+    type: "block"
+    name: "Screen Counterparty Against Sanctions"
+    block: "compliance.sanctions_screener"
+    input_mapping:
+      entity_name: "$extracted_vendor_name"
+      country_code: "US"
+      transaction_amount_usd: "$invoice_total_usd"
+    output_mapping:
+      is_flagged: "sanctions_is_flagged"
+      risk_score: "sanctions_risk_score"
+      compliance_note: "compliance_audit_summary"
+
+edges:
+  - source: "START"
+    target: "extract_invoice"
+  - source: "extract_invoice"
+    target: "check_sanctions"
+  - source: "check_sanctions"
+    target: "END"
+

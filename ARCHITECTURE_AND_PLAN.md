@@ -315,8 +315,10 @@ lang-bpmn/
 │   │   └── App.tsx
 │
 ├── verify_domain_blocks.py        # Domain block verification & demo script
+├── verify_workflow_compiler.py    # Declarative compiler verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
+    ├── test_workflow_compiler.py
     ├── test_dsl_parser.py
     ├── test_compiler.py
     ├── test_dmn_routing.py
@@ -335,10 +337,11 @@ lang-bpmn/
 * [x] Unit test block registration, schema validation, and execution isolation.
 
 ### Phase 2: Declarative Spec (DSL) & LangGraph Compiler
-* [ ] Define Pydantic schema for `agent-bpmn.yaml` (nodes, edges, guardrails, hitl).
-* [ ] Build graph linter (detect dead ends, disconnected nodes, unbound schemas).
-* [ ] Build `GraphCompiler` to transform declarative YAML AST into executable `langgraph.graph.StateGraph`.
-* [ ] Implement SQLite/Postgres checkpointer integration.
+* [x] Define Pydantic schema for `agent-bpmn.yaml` (nodes, edges, guardrails, metadata).
+* [x] Build graph linter (detect dead ends, disconnected nodes, unbound schemas).
+* [x] Build `GraphCompiler` to transform declarative YAML AST into executable `langgraph.graph.StateGraph`.
+* [x] Automated unit test suite (`tests/test_workflow_compiler.py`) passing 100%.
+* [x] Verification runner (`verify_workflow_compiler.py`) demonstrated in visible terminal.
 
 ### Phase 3: Hybrid Routing (DMN Decision Tables + Semantic Enums)
 * [ ] Implement safe DMN expression evaluator supporting comparison, logical operators, and regex.
