@@ -224,7 +224,7 @@ edges:
 
 See [ARCHITECTURE_AND_PLAN.md](file:///d:/Projects/lang-bpmn/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
 
-- [ ] **Phase 1: Foundation & Domain Block SDK**
+- [x] **Phase 1: Foundation & Domain Block SDK**
 - [ ] **Phase 2: Declarative AST & LangGraph Compiler**
 - [ ] **Phase 3: Hybrid Routing (DMN Tables + Semantic Enums)**
 - [ ] **Phase 4: Enterprise Human-in-the-Loop Inbox**

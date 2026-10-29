@@ -1,0 +1,306 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-10-29T16:36:32.855584+00:00",
+  "total_blocks": 3,
+  "departments": {
+    "Compliance": [
+      {
+        "metadata": {
+          "id": "compliance.sanctions_screener",
+          "name": "Screen Against Sanctions List",
+          "department": "Compliance",
+          "description": "Cross-references counterparty against OFAC, EU, UN, and PEP international watchlists.",
+          "icon": "shield-alert",
+          "estimated_cost_usd": 0.004,
+          "p95_latency_ms": 1200,
+          "tags": [
+            "compliance",
+            "ofac",
+            "kyc",
+            "aml",
+            "sanctions"
+          ],
+          "version": "1.0.0"
+        },
+        "input_model_name": "SanctionCheckInput",
+        "output_model_name": "SanctionCheckOutput",
+        "input_schema": {
+          "properties": {
+            "entity_name": {
+              "description": "Full legal name of the entity or individual",
+              "title": "Entity Name",
+              "type": "string"
+            },
+            "country_code": {
+              "description": "Two-letter ISO 3166-1 alpha-2 country code",
+              "maxLength": 2,
+              "minLength": 2,
+              "title": "Country Code",
+              "type": "string"
+            },
+            "transaction_amount_usd": {
+              "description": "Associated transaction amount in USD",
+              "minimum": 0.0,
+              "title": "Transaction Amount Usd",
+              "type": "number"
+            }
+          },
+          "required": [
+            "entity_name",
+            "country_code",
+            "transaction_amount_usd"
+          ],
+          "title": "SanctionCheckInput",
+          "type": "object"
+        },
+        "output_schema": {
+          "properties": {
+            "is_flagged": {
+              "description": "True if entity matches sanctions, OFAC or PEP lists",
+              "title": "Is Flagged",
+              "type": "boolean"
+            },
+            "risk_score": {
+              "description": "Calculated compliance risk score (0.0 to 1.0)",
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Risk Score",
+              "type": "number"
+            },
+            "matched_entries": {
+              "description": "Specific sanctions list matches, if any",
+              "items": {
+                "type": "string"
+              },
+              "title": "Matched Entries",
+              "type": "array"
+            },
+            "compliance_note": {
+              "description": "Summary of reasoning for audit trail",
+              "title": "Compliance Note",
+              "type": "string"
+            }
+          },
+          "required": [
+            "is_flagged",
+            "risk_score",
+            "compliance_note"
+          ],
+          "title": "SanctionCheckOutput",
+          "type": "object"
+        }
+      }
+    ],
+    "Finance": [
+      {
+        "metadata": {
+          "id": "finance.invoice_extractor",
+          "name": "Extract Invoice Line Items",
+          "department": "Finance",
+          "description": "Extracts structured vendor data, line items, and totals from PDF invoices using vision models.",
+          "icon": "receipt-text",
+          "estimated_cost_usd": 0.015,
+          "p95_latency_ms": 1800,
+          "tags": [
+            "finance",
+            "ap",
+            "invoices",
+            "ocr",
+            "extraction"
+          ],
+          "version": "1.0.0"
+        },
+        "input_model_name": "InvoiceExtractInput",
+        "output_model_name": "InvoiceExtractOutput",
+        "input_schema": {
+          "properties": {
+            "document_url": {
+              "description": "Secure S3/GCS bucket URL to invoice PDF/image",
+              "title": "Document Url",
+              "type": "string"
+            },
+            "vendor_tax_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional known Vendor Tax / VAT ID",
+              "title": "Vendor Tax Id"
+            }
+          },
+          "required": [
+            "document_url"
+          ],
+          "title": "InvoiceExtractInput",
+          "type": "object"
+        },
+        "output_schema": {
+          "$defs": {
+            "InvoiceLineItem": {
+              "properties": {
+                "description": {
+                  "title": "Description",
+                  "type": "string"
+                },
+                "quantity": {
+                  "default": 1,
+                  "minimum": 1,
+                  "title": "Quantity",
+                  "type": "integer"
+                },
+                "unit_price_usd": {
+                  "minimum": 0.0,
+                  "title": "Unit Price Usd",
+                  "type": "number"
+                },
+                "total_usd": {
+                  "minimum": 0.0,
+                  "title": "Total Usd",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "description",
+                "unit_price_usd",
+                "total_usd"
+              ],
+              "title": "InvoiceLineItem",
+              "type": "object"
+            }
+          },
+          "properties": {
+            "invoice_number": {
+              "title": "Invoice Number",
+              "type": "string"
+            },
+            "vendor_name": {
+              "title": "Vendor Name",
+              "type": "string"
+            },
+            "total_amount_usd": {
+              "minimum": 0.0,
+              "title": "Total Amount Usd",
+              "type": "number"
+            },
+            "currency": {
+              "default": "USD",
+              "title": "Currency",
+              "type": "string"
+            },
+            "line_items": {
+              "items": {
+                "$ref": "#/$defs/InvoiceLineItem"
+              },
+              "title": "Line Items",
+              "type": "array"
+            },
+            "confidence_score": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence Score",
+              "type": "number"
+            }
+          },
+          "required": [
+            "invoice_number",
+            "vendor_name",
+            "total_amount_usd",
+            "line_items",
+            "confidence_score"
+          ],
+          "title": "InvoiceExtractOutput",
+          "type": "object"
+        }
+      }
+    ],
+    "Customer Care": [
+      {
+        "metadata": {
+          "id": "support.ticket_triage",
+          "name": "Triage Customer Support Ticket",
+          "department": "Customer Care",
+          "description": "Classifies incoming customer inquiry by intent, urgency, and sentiment.",
+          "icon": "life-buoy",
+          "estimated_cost_usd": 0.002,
+          "p95_latency_ms": 650,
+          "tags": [
+            "support",
+            "triage",
+            "nlp",
+            "sentiment"
+          ],
+          "version": "1.0.0"
+        },
+        "input_model_name": "SupportTicketInput",
+        "output_model_name": "SupportTicketOutput",
+        "input_schema": {
+          "properties": {
+            "customer_email": {
+              "title": "Customer Email",
+              "type": "string"
+            },
+            "subject": {
+              "title": "Subject",
+              "type": "string"
+            },
+            "message_body": {
+              "title": "Message Body",
+              "type": "string"
+            },
+            "account_tier": {
+              "default": "STANDARD",
+              "description": "Account tier: STANDARD, PRO, or ENTERPRISE",
+              "title": "Account Tier",
+              "type": "string"
+            }
+          },
+          "required": [
+            "customer_email",
+            "subject",
+            "message_body"
+          ],
+          "title": "SupportTicketInput",
+          "type": "object"
+        },
+        "output_schema": {
+          "properties": {
+            "category": {
+              "description": "Identified category: BILLING, TECHNICAL, CHURN_RISK, or GENERAL",
+              "title": "Category",
+              "type": "string"
+            },
+            "urgency": {
+              "description": "Assigned priority: P1_CRITICAL, P2_HIGH, P3_NORMAL",
+              "title": "Urgency",
+              "type": "string"
+            },
+            "sentiment_score": {
+              "description": "Customer sentiment from -1.0 (angry) to +1.0 (happy)",
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Sentiment Score",
+              "type": "number"
+            },
+            "recommended_routing": {
+              "title": "Recommended Routing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "category",
+            "urgency",
+            "sentiment_score",
+            "recommended_routing"
+          ],
+          "title": "SupportTicketOutput",
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

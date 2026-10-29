@@ -314,8 +314,9 @@ lang-bpmn/
 │   │   │   └── heatmap/           # Latency/Cost visual heatmap overlay
 │   │   └── App.tsx
 │
+├── verify_domain_blocks.py        # Domain block verification & demo script
 └── tests/                         # Comprehensive Test Suite
-    ├── test_sdk.py
+    ├── test_domain_block_sdk.py
     ├── test_dsl_parser.py
     ├── test_compiler.py
     ├── test_dmn_routing.py
@@ -329,9 +330,9 @@ lang-bpmn/
 ## 5. Phased Implementation Roadmap
 
 ### Phase 1: SDK Foundation & Capability Registry
-* [ ] Implement `@domain_block` decorator with Pydantic type validation and metadata reflection.
-* [ ] Build registry scanner to discover and serialize capabilities into JSON Schema contracts.
-* [ ] Unit test block registration, schema validation, and execution isolation.
+* [x] Implement `@domain_block` decorator with Pydantic type validation and metadata reflection.
+* [x] Build registry scanner to discover and serialize capabilities into JSON Schema contracts.
+* [x] Unit test block registration, schema validation, and execution isolation.
 
 ### Phase 2: Declarative Spec (DSL) & LangGraph Compiler
 * [ ] Define Pydantic schema for `agent-bpmn.yaml` (nodes, edges, guardrails, hitl).
