@@ -16,6 +16,7 @@ from agent_bpmn.server.routes.workflows import router as workflows_router
 from agent_bpmn.server.routes.inbox import router as inbox_router
 from agent_bpmn.server.routes.telemetry import router as telemetry_router
 from agent_bpmn.server.routes.simulation import router as simulation_router
+from agent_bpmn.server.routes.governance import router as governance_router
 import examples.sample_blocks  # Ensure blocks are registered
 
 
@@ -109,6 +110,7 @@ app.include_router(workflows_router)
 app.include_router(inbox_router)
 app.include_router(telemetry_router)
 app.include_router(simulation_router)
+app.include_router(governance_router)
 
 
 @app.get("/health")

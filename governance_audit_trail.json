@@ -1,0 +1,60 @@
+[
+  {
+    "entry_id": "audit_genesis_000",
+    "index": 0,
+    "timestamp": "2026-10-29T19:40:10.741838+00:00",
+    "actor": "system:genesis",
+    "action": "INITIALIZE_AUDIT_LEDGER",
+    "workflow_id": "system",
+    "details": {
+      "description": "AgentBPMN Cryptographic Audit Trail Genesis Block"
+    },
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "current_hash": "6d1d67381cdeb9a5f51a8033a9796f1c4d70867ddaebbac9fe31ee69dbfd1afa"
+  },
+  {
+    "entry_id": "audit_b07150aa92",
+    "index": 1,
+    "timestamp": "2026-10-29T19:40:11.742926+00:00",
+    "actor": "sarah.chen@enterprise.com",
+    "action": "PROPOSE_CHANGE",
+    "workflow_id": "hybrid_invoice_routing_flow",
+    "details": {
+      "proposal_id": "prop_a534781b",
+      "pr_number": 101,
+      "branch_name": "governance/wf-hybrid_invoice_routing_flow-v1.3.0-1793302811",
+      "target_version": "1.3.0",
+      "justification": "Tightened sanctions risk threshold from 0.70 to 0.50 and lowered L2 threshold from $50k to $10k per mandatory Q4 Enterprise Risk Committee directives."
+    },
+    "previous_hash": "6d1d67381cdeb9a5f51a8033a9796f1c4d70867ddaebbac9fe31ee69dbfd1afa",
+    "current_hash": "f296230ae70d6d362990a3a614cf10f558ad908ddd3f7cdc4b40c2f2d552849d"
+  },
+  {
+    "entry_id": "audit_45e84949ae",
+    "index": 2,
+    "timestamp": "2026-10-29T19:40:11.743136+00:00",
+    "actor": "marcus.vance@enterprise.com",
+    "action": "APPROVE_PROPOSAL",
+    "workflow_id": "hybrid_invoice_routing_flow",
+    "details": {
+      "proposal_id": "prop_a534781b",
+      "pr_number": 101
+    },
+    "previous_hash": "f296230ae70d6d362990a3a614cf10f558ad908ddd3f7cdc4b40c2f2d552849d",
+    "current_hash": "3ae8b15089cbba4385533df2796b50b78bab3a1ece883dbfe91c3a200df8bee5"
+  },
+  {
+    "entry_id": "audit_1d890a52f0",
+    "index": 3,
+    "timestamp": "2026-10-29T19:40:11.743288+00:00",
+    "actor": "marcus.vance@enterprise.com",
+    "action": "MERGE_PROPOSAL",
+    "workflow_id": "hybrid_invoice_routing_flow",
+    "details": {
+      "proposal_id": "prop_a534781b",
+      "pr_number": 101
+    },
+    "previous_hash": "3ae8b15089cbba4385533df2796b50b78bab3a1ece883dbfe91c3a200df8bee5",
+    "current_hash": "15ba99bcbecc2e1ca6d35c8d7b781a8188a7d346c255f5a8b00403d29dec1c6d"
+  }
+]

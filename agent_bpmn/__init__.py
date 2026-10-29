@@ -67,7 +67,21 @@ from agent_bpmn.simulation import (
     SimulationReport,
 )
 
-__version__ = "0.6.0"
+from agent_bpmn.governance import (
+    AuditLogger,
+    AuditTrailEntry,
+    ChangeProposal,
+    ChangeProposalRequest,
+    EnterpriseSecurityService,
+    GitGovernanceClient,
+    SecurityAuthorizationError,
+    UserPrincipal,
+    audit_logger,
+    git_governance_client,
+    security_service,
+)
+
+__version__ = "1.0.0"
 
 __all__ = [
     "domain_block",
@@ -122,4 +136,15 @@ __all__ = [
     "SimulationImpactDiff",
     "SimulationReport",
     "SimulationEngine",
+    "UserPrincipal",
+    "ChangeProposalRequest",
+    "ChangeProposal",
+    "AuditTrailEntry",
+    "AuditLogger",
+    "audit_logger",
+    "EnterpriseSecurityService",
+    "SecurityAuthorizationError",
+    "security_service",
+    "GitGovernanceClient",
+    "git_governance_client",
 ]

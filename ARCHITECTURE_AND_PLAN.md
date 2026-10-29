@@ -321,6 +321,7 @@ lang-bpmn/
 ├── verify_guardrails_and_heatmap.py # Guardrails & Process Heatmap verification script
 ├── verify_simulation_replay.py    # Shadow Mode & Pre-Flight Simulation verification script
 ├── verify_web_studio.py           # Web Studio & API Gateway verification script
+├── verify_git_governance.py       # Git Governance & RBAC Security verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
@@ -328,7 +329,8 @@ lang-bpmn/
     ├── test_approval_inbox.py
     ├── test_guardrails_and_heatmap.py
     ├── test_simulation_replay.py
-    └── test_server_api.py
+    ├── test_server_api.py
+    └── test_git_governance.py
 ```
 
 ---
@@ -388,9 +390,11 @@ lang-bpmn/
 * [x] Verification runner (`verify_web_studio.py`) demonstrated in visible terminal.
 
 ### Phase 8: Git Governance & Enterprise Security
-* [ ] Build Git Bridge (auto-create branch, commit YAML, open GitHub/GitLab PR).
-* [ ] Add enterprise RBAC auth middleware (JWT / OAuth2 / Okta claims).
-* [ ] Build regulatory audit trail log.
+* [x] Build Git Governance client (branch creation, PR generation with simulation diffs, separation of duties).
+* [x] Implement enterprise RBAC identity service with Okta / OIDC role claims (`UserPrincipal`).
+* [x] Build tamper-evident cryptographic audit ledger with SHA-256 hash chaining (SOC2 compliant).
+* [x] Automated unit test suite (`tests/test_git_governance.py`) passing 100% (5/5 tests).
+* [x] Verification runner (`verify_git_governance.py`) demonstrated in visible terminal.
 
 ---
 
