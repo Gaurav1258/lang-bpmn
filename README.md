@@ -248,7 +248,7 @@ npm run dev
 Open [http://localhost:5173](http://localhost:5173).
 
 ### 4. Running the Full Test Suite
-Execute all 49 unit and integration tests across all 8 architectural pillars:
+Execute all 50 unit and integration tests across all architectural pillars and workflow lifecycle operations:
 ```powershell
 pytest -v
 ```
@@ -268,9 +268,23 @@ python verify_git_governance.py         # Phase 8: Git Governance & Audit Logs
 
 ---
 
+## 🎨 Camunda-Grade Visual Modeler Capabilities
+
+The Web Studio (`http://localhost:8000`) now functions as an interactive **Enterprise Process Modeler**:
+* **➕ Create New Workflows:** Launch the workflow creation wizard to configure name, department, ID slug, guardrail budgets, and choose from certified starter templates (*Blank Starter*, *Linear STP*, *DMN Decision Matrix*, or *Executive HITL Gate*).
+* **🛠️ Interactive Canvas Authoring:**
+  - Add **AI Service Tasks**, **DMN Decision Tables**, or **User Tasks (HITL)** directly from the canvas toolbar or block palette.
+  - Delete nodes with automatic edge repair and sequence flow reconnection.
+  - Inspect and customize properties in the right-side **Camunda-Style Property Panel** (reassign domain blocks from the Capability Catalog, configure human roles & SLAs, adjust loop retry caps).
+* **💾 Persistent Git-Friendly Storage:** Save updates directly to disk via `PUT /api/workflows/{file_name}` with real-time linting validation.
+* **▶️ Live "Run / Test" Execution Sandbox:** Test-run custom workflows directly from the browser with configurable input JSON presets, step-by-step LangGraph execution trace, and USD cost tracking.
+
+
+---
+
 ## 🗺️ Project Status & Development Roadmap
 
-See [ARCHITECTURE_AND_PLAN.md](https://github.com/Gaurav1258/lang-bpmn/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
+See [ARCHITECTURE_AND_PLAN.md](https://github.com/Gaurav1258/lang-bpmn/blob/main/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
 
 - [x] **Phase 1: Foundation & Domain Block SDK**
 - [x] **Phase 2: Declarative AST & LangGraph Compiler**

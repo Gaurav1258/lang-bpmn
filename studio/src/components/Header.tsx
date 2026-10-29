@@ -1,16 +1,16 @@
 import React from 'react';
 import {
-  Activity,
-  CheckCircle,
+  Check,
   FileCode,
   Flame,
   GitPullRequest,
   Inbox,
   Layers,
   Play,
-  RotateCcw,
-  Sliders,
+  Plus,
+  Save,
   Table,
+  Trash2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -24,6 +24,12 @@ interface HeaderProps {
   onOpenSimulation: () => void;
   onOpenProposeChange: () => void;
   pendingTaskCount: number;
+  onOpenNewWorkflow: () => void;
+  onSaveWorkflow: () => void;
+  onOpenTestWorkflow: () => void;
+  onDeleteWorkflow: () => void;
+  isSaving: boolean;
+  isDirty: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,37 +43,85 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSimulation,
   onOpenProposeChange,
   pendingTaskCount,
+  onOpenNewWorkflow,
+  onSaveWorkflow,
+  onOpenTestWorkflow,
+  onDeleteWorkflow,
+  isSaving,
+  isDirty,
 }) => {
   return (
     <header className="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between select-none">
       {/* Brand & Persona Divider */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
             <Layers className="w-5 h-5 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base tracking-tight text-white">Agent<span className="text-cyan-400">BPMN</span></span>
-              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 tracking-wider">Studio v0.7</span>
+              <span className="font-extrabold text-base tracking-tight text-white">
+                Agent<span className="text-cyan-400">BPMN</span>
+              </span>
+              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 tracking-wider">
+                Studio v0.8
+              </span>
             </div>
-            <p className="text-[11px] text-slate-400">Management Persona Canvas</p>
+            <p className="text-[11px] text-slate-400">Camunda-Grade Enterprise Modeler</p>
           </div>
         </div>
 
-        {/* Workflow File Selector */}
-        <div className="h-6 w-px bg-slate-800 mx-2" />
-        <select
-          value={currentWorkflowFile}
-          onChange={(e) => onSelectWorkflow(e.target.value)}
-          className="bg-slate-800/90 text-slate-200 text-xs rounded-md border border-slate-700 px-3 py-1.5 focus:outline-none focus:border-cyan-500 transition-colors"
-        >
-          {workflows.map((wf) => (
-            <option key={wf.file_name} value={wf.file_name}>
-              {wf.metadata?.name || wf.file_name} ({wf.metadata?.version || 'v1.0'})
-            </option>
-          ))}
-        </select>
+        {/* Workflow File Selector & New Button */}
+        <div className="h-6 w-px bg-slate-800 mx-1" />
+        <div className="flex items-center gap-2">
+          <select
+            value={currentWorkflowFile}
+            onChange={(e) => onSelectWorkflow(e.target.value)}
+            className="bg-slate-800/90 text-slate-200 text-xs rounded-md border border-slate-700 px-3 py-1.5 focus:outline-none focus:border-cyan-500 transition-colors max-w-xs truncate"
+          >
+            {workflows.map((wf) => (
+              <option key={wf.file_name} value={wf.file_name}>
+                {wf.metadata?.name || wf.file_name} ({wf.metadata?.version || 'v1.0'})
+              </option>
+            ))}
+          </select>
+
+          {/* New Workflow Button */}
+          <button
+            onClick={onOpenNewWorkflow}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm shadow-cyan-600/30 transition-all active:scale-95"
+            title="Create a new workflow from scratch or templates"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New</span>
+          </button>
+
+          {/* Save Workflow Button */}
+          <button
+            onClick={onSaveWorkflow}
+            disabled={isSaving}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all ${
+              isDirty
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 hover:bg-amber-500/30'
+                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+            }`}
+            title="Persist workflow AST changes to disk"
+          >
+            <Save className={`w-3.5 h-3.5 ${isDirty ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span>{isSaving ? 'Saving...' : isDirty ? 'Save *' : 'Saved'}</span>
+          </button>
+
+          {/* Delete Workflow Button */}
+          {workflows.length > 1 && (
+            <button
+              onClick={onDeleteWorkflow}
+              className="p-1.5 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/50 transition-colors"
+              title="Delete this workflow"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Center Nav Views */}
@@ -118,8 +172,18 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
 
-      {/* Right Action Tools: Heatmap Toggle, Simulation, Propose Change */}
-      <div className="flex items-center gap-3">
+      {/* Right Action Tools: Run/Test, Heatmap Toggle, Simulation, Propose Change */}
+      <div className="flex items-center gap-2.5">
+        {/* Run / Test Button */}
+        <button
+          onClick={onOpenTestWorkflow}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 transition-all active:scale-95"
+          title="Run live execution of this workflow in sandbox"
+        >
+          <Play className="w-3.5 h-3.5 fill-white" />
+          Run / Test
+        </button>
+
         {/* Heatmap Toggle */}
         <button
           onClick={() => setHeatmapEnabled(!heatmapEnabled)}
@@ -140,20 +204,18 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
           title="Pre-flight replay historical production runs in sandbox"
         >
-          <Play className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400" />
-          Simulate Impact
+          Simulate
         </button>
 
         {/* Propose Change Git Button */}
         <button
           onClick={onOpenProposeChange}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 transition-all active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 transition-all active:scale-95"
         >
           <GitPullRequest className="w-3.5 h-3.5" />
-          Propose Change
+          Propose
         </button>
       </div>
     </header>
   );
 };
-

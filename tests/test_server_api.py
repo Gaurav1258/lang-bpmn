@@ -122,3 +122,45 @@ def test_step7_7_frontend_studio_spa_served(client):
     assert res.status_code == 200
     assert "AgentBPMN Studio" in res.text
     assert '<div id="root">' in res.text
+
+
+def test_step7_8_workflow_crud_endpoints(client):
+    """Verify workflow creation, updating, and deletion endpoints."""
+    # 1. Create a new workflow from a template
+    create_payload = {
+        "name": "Custom AML Compliance Review",
+        "workflow_id": "custom_aml_review_test",
+        "department": "Regulatory Compliance",
+        "description": "Custom AML screening and high-value compliance flow",
+        "template": "linear",
+    }
+    create_res = client.post("/api/workflows", json=create_payload)
+    assert create_res.status_code == 200
+    created_data = create_res.json()
+    assert created_data["workflow_id"] == "custom_aml_review_test"
+    assert created_data["file_name"] == "custom_aml_review_test.yaml"
+    assert "Extract Invoice Line Items" in created_data["yaml_content"]
+
+    # 2. Verify it is returned in list
+    list_res = client.get("/api/workflows")
+    assert list_res.status_code == 200
+    file_names = [w["file_name"] for w in list_res.json()]
+    assert "custom_aml_review_test.yaml" in file_names
+
+    # 3. Update the workflow AST / YAML
+    update_payload = {
+        "yaml_content": created_data["yaml_content"].replace("Extract Invoice Line Items", "Pre-process Document Feed")
+    }
+    update_res = client.put("/api/workflows/custom_aml_review_test.yaml", json=update_payload)
+    assert update_res.status_code == 200
+    assert "Pre-process Document Feed" in update_res.json()["yaml_content"]
+
+    # 4. Clean up / delete the test workflow
+    delete_res = client.delete("/api/workflows/custom_aml_review_test.yaml")
+    assert delete_res.status_code == 200
+    assert "deleted successfully" in delete_res.json()["message"]
+
+    # 5. Verify deletion
+    verify_res = client.get("/api/workflows/custom_aml_review_test.yaml")
+    assert verify_res.status_code == 404
+

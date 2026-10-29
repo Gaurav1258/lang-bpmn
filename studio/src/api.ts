@@ -108,6 +108,90 @@ export async function fetchWorkflowDetail(fileName: string): Promise<{ yaml_cont
   return await res.json();
 }
 
+export async function createWorkflow(payload: {
+  name: string;
+  workflow_id?: string;
+  department?: string;
+  description?: string;
+  template?: string;
+  yaml_content?: string;
+  max_budget_usd?: number;
+  max_loop_iterations?: number;
+  workflow_timeout_seconds?: number;
+}): Promise<{ file_name: string; workflow_id: string; yaml_content: string; ast: WorkflowDefinition; message: string }> {
+  const res = await fetch(`${API_BASE}/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to create workflow' }));
+    throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
+  }
+  return await res.json();
+}
+
+export async function updateWorkflow(
+  fileName: string,
+  payload: { yaml_content?: string; ast?: Partial<WorkflowDefinition> }
+): Promise<{ file_name: string; workflow_id: string; yaml_content: string; ast: WorkflowDefinition; message: string }> {
+  const res = await fetch(`${API_BASE}/workflows/${fileName}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed to update workflow' }));
+    throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
+  }
+  return await res.json();
+}
+
+export async function deleteWorkflow(fileName: string): Promise<{ message: string; file_name: string }> {
+  const res = await fetch(`${API_BASE}/workflows/${fileName}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function executeWorkflow(payload: {
+  workflow_yaml?: string;
+  workflow_id?: string;
+  input_payload: Record<string, any>;
+}): Promise<{
+  status: 'COMPLETED' | 'INTERRUPTED' | 'FAILED';
+  final_state: Record<string, any>;
+  history: string[];
+  total_cost_usd: number;
+  telemetry: Record<string, any>;
+  error_type?: string;
+  error_message?: string;
+}> {
+  const res = await fetch(`${API_BASE}/workflows/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function lintWorkflow(yamlContent: string): Promise<{
+  is_valid: boolean;
+  errors: string[];
+  warnings: string[];
+  workflow_id?: string;
+}> {
+  const res = await fetch(`${API_BASE}/workflows/lint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yaml_content: yamlContent }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+
 export async function fetchHeatmap(workflowId: string): Promise<WorkflowHeatmap> {
   try {
     const res = await fetch(`${API_BASE}/telemetry/heatmaps/${workflowId}`);
