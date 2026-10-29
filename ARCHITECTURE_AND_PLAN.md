@@ -320,13 +320,15 @@ lang-bpmn/
 ├── verify_approval_inbox.py       # Enterprise HITL & Approval Inbox verification script
 ├── verify_guardrails_and_heatmap.py # Guardrails & Process Heatmap verification script
 ├── verify_simulation_replay.py    # Shadow Mode & Pre-Flight Simulation verification script
+├── verify_web_studio.py           # Web Studio & API Gateway verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
     ├── test_hybrid_routing.py
     ├── test_approval_inbox.py
     ├── test_guardrails_and_heatmap.py
-    └── test_simulation_replay.py
+    ├── test_simulation_replay.py
+    └── test_server_api.py
 ```
 
 ---
@@ -376,11 +378,14 @@ lang-bpmn/
 * [x] Verification runner (`verify_simulation_replay.py`) demonstrated in visible terminal.
 
 ### Phase 7: Web Studio UI (React + React Flow / BPMN)
-* [ ] Scaffold React + Vite + Tailwind + shadcn UI frontend.
-* [ ] Build Domain Block drag-and-drop palette.
-* [ ] Build DMN spreadsheet editor and Semantic Route card builder.
-* [ ] Build Human Review Task Inbox with dynamic Pydantic form renderer.
-* [ ] Build visual Heatmap overlay toggle.
+* [x] Scaffold React + Vite + Tailwind CSS frontend in `studio/`.
+* [x] Build Domain Block drag-and-drop / click-to-add palette with Pydantic contract inspection.
+* [x] Build DMN spreadsheet editor and Semantic Route card builder.
+* [x] Build Human Review Task Inbox with dynamic Pydantic state preview and resume actions.
+* [x] Build visual Process Intelligence Heatmap overlay toggle.
+* [x] Build FastAPI Enterprise Gateway (`agent_bpmn/server/`) serving API endpoints and compiled SPA.
+* [x] Automated unit test suite (`tests/test_server_api.py`) passing 100% (7/7 tests).
+* [x] Verification runner (`verify_web_studio.py`) demonstrated in visible terminal.
 
 ### Phase 8: Git Governance & Enterprise Security
 * [ ] Build Git Bridge (auto-create branch, commit YAML, open GitHub/GitLab PR).

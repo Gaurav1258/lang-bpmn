@@ -109,6 +109,17 @@ class ApprovalInboxService:
             results = [t for t in results if t.status == status]
         return sorted(results, key=lambda t: t.created_at, reverse=True)
 
+    def get_pending_tasks(
+        self,
+        role: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+    ) -> List[ApprovalTask]:
+        """Convenience method returning pending tasks filtered by role or workflow ID."""
+        tasks = self.list_tasks(role=role, status=TaskStatus.PENDING)
+        if workflow_id:
+            tasks = [t for t in tasks if t.workflow_id == workflow_id]
+        return tasks
+
     async def submit_decision(
         self,
         task_id: str,
