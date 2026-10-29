@@ -1,0 +1,83 @@
+# =============================================================================
+# Google Cloud Build CI/CD Pipeline
+# AgentBPMN (lang-bpmn) - Enterprise Process Orchestration & Studio
+# Target: Google Cloud Run (us-central1) on GCP Project mlops2215
+# =============================================================================
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: Strict Unit & Compiler Quality Gate
+  # ---------------------------------------------------------------------------
+  - name: 'python:3.11-slim'
+    id: 'stage-1-unit-tests-quality-gate'
+    entrypoint: 'bash'
+    env:
+      - 'GCP_PROJECT_ID=$PROJECT_ID'
+      - 'GCP_REGION=$_REGION'
+    args:
+      - '-c'
+      - |
+        set -e
+        echo "============================================================"
+        echo "STAGE 1: RUNNING FULL AGENT-BPMN QUALITY GATE (50 TESTS)"
+        echo "============================================================"
+        pip install --no-cache-dir uv
+        uv pip install --system -e ".[dev,engine]"
+        pytest tests/ -v --tb=short
+        echo ">>> STAGE 1 PASSED: All 50 architectural tests verified."
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Build Production Docker Container (FastAPI + React Studio SPA)
+  # ---------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'stage-2-build-container-image'
+    args:
+      - 'build'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:$COMMIT_SHA'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+  # ---------------------------------------------------------------------------
+  # Step 3: Push Container Image to GCP Artifact Registry
+  # ---------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'stage-3-push-image-to-registry'
+    args:
+      - 'push'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+
+  # ---------------------------------------------------------------------------
+  # Step 4: Deploy to Google Cloud Run (agent-bpmn)
+  # ---------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'stage-4-deploy-to-cloud-run'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+      - '--region=$_REGION'
+      - '--platform=managed'
+      - '--memory=1Gi'
+      - '--port=8080'
+      - '--allow-unauthenticated'
+      - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=$_REGION,ENVIRONMENT=production'
+
+# Images registered in Artifact Registry
+images:
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+
+substitutions:
+  _REGION: 'us-central1'
+  _REPO_NAME: 'scf-repo'
+  _SERVICE_NAME: 'agent-bpmn'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1200s'
+

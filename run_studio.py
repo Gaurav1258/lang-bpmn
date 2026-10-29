@@ -3,6 +3,7 @@ AgentBPMN Studio Runner
 Starts the FastAPI server on port 8000 and launches the browser to http://localhost:8000.
 """
 
+import os
 import sys
 import time
 import webbrowser
@@ -18,9 +19,9 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 if __name__ == "__main__":
-    port = 8000
-    host = "127.0.0.1"
-    url = f"http://localhost:{port}"
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0" if os.getenv("PORT") else "127.0.0.1")
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
 
     line = "=" * 76
     print(f"\n{line}")

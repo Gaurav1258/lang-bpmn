@@ -1,0 +1,128 @@
+version: "1.0"
+metadata:
+  id: "autonomous_scf_treasury_governance"
+  name: "Autonomous SCF & Working Capital Treasury Governance"
+  version: "1.0.0"
+  department: "Supply Chain Finance"
+  description: "End-to-end autonomous working capital floating engine with DMN decision tables, credit line validation, and executive human approval gates."
+  author: "Treasury Risk Architect"
+guardrails:
+  max_total_budget_usd: 0.75
+  max_loop_iterations: 3
+  workflow_timeout_seconds: 600
+nodes:
+  - id: "screen_supplier_risk"
+    type: "block"
+    name: "Screen Supplier Counterparty Risk"
+    block: "scf.risk_sentinel"
+    input_mapping:
+      supplier_id: "input.supplier_id"
+      supplier_name: "input.supplier_name"
+      invoice_amount_usd: "input.invoice_amount_usd"
+    output_mapping:
+      supplier_risk_score: "supplier_risk_score"
+      is_counterparty_flagged: "is_counterparty_flagged"
+      acceptance_probability: "acceptance_probability"
+    max_retries: 3
+
+  - id: "forecast_liquidity"
+    type: "block"
+    name: "Project 60-Day Corporate Liquidity"
+    block: "scf.cash_forecaster"
+    input_mapping:
+      corporate_buyer_id: "input.buyer_id"
+      target_dpo_days: "input.target_dpo_days"
+      horizon_days: "input.horizon_days"
+    output_mapping:
+      projected_cash_buffer_usd: "projected_cash_buffer_usd"
+      liquidity_status: "liquidity_status"
+    max_retries: 2
+
+  - id: "scf_routing_decision"
+    type: "dmn_table"
+    name: "SCF Product & Governance Routing Matrix"
+    dmn_config:
+      hit_policy: "FIRST_MATCH"
+      rules:
+        - condition: "is_counterparty_flagged == True"
+          target: "treasury_director_approval"
+          description: "High counterparty risk requires executive sign-off"
+        - condition: "invoice_amount_usd > 50000"
+          target: "treasury_director_approval"
+          description: "Invoices over $50,000 USD require manual treasury review"
+        - condition: "acceptance_probability >= 0.7"
+          target: "structure_capital"
+          description: "High acceptance probability qualifies for automated discount structuring"
+      default_target: "treasury_director_approval"
+
+  - id: "structure_capital"
+    type: "block"
+    name: "Optimize Early Payment Structure"
+    block: "scf.capital_structurer"
+    input_mapping:
+      invoice_amount_usd: "input.invoice_amount_usd"
+      days_to_maturity: "input.days_to_maturity"
+      supplier_acceptance_probability: "state.acceptance_probability"
+    output_mapping:
+      recommended_product: "recommended_product"
+      early_payment_amount_usd: "early_payment_amount_usd"
+      discount_yield_apr: "discount_yield_apr"
+      buyer_discount_savings_usd: "buyer_discount_savings_usd"
+    max_retries: 2
+
+  - id: "treasury_director_approval"
+    type: "human_review"
+    name: "Treasury Director Sign-off Gate"
+    human_review_config:
+      assigned_role: "role:treasury_director"
+      title: "Supply Chain Finance Facility Drawdown Approval"
+      sla_timeout_seconds: 14400
+      allowed_actions:
+        - "APPROVE"
+        - "REJECT"
+        - "EDIT_AND_APPROVE"
+      timeout_action: "REJECT"
+
+  - id: "validate_bank_facility"
+    type: "block"
+    name: "Verify Bank Facility Headroom"
+    block: "scf.guardrail_validator"
+    input_mapping:
+      bank_facility_id: "input.bank_facility_id"
+      drawdown_request_amount_usd: "input.invoice_amount_usd"
+    output_mapping:
+      is_facility_approved: "is_facility_approved"
+      remaining_headroom_usd: "remaining_headroom_usd"
+      financing_bank_name: "financing_bank_name"
+    max_retries: 2
+
+  - id: "dispatch_drawdown"
+    type: "block"
+    name: "Dispatch Bank Drawdown & ERP Settlement"
+    block: "scf.treasury_dispatcher"
+    input_mapping:
+      invoice_number: "input.invoice_number"
+      supplier_name: "input.supplier_name"
+      drawdown_amount_usd: "input.invoice_amount_usd"
+      financing_facility_id: "input.bank_facility_id"
+    output_mapping:
+      drawdown_reference_id: "drawdown_reference_id"
+      execution_status: "execution_status"
+    max_retries: 3
+
+edges:
+  - source: "START"
+    target: "screen_supplier_risk"
+  - source: "screen_supplier_risk"
+    target: "forecast_liquidity"
+  - source: "forecast_liquidity"
+    target: "scf_routing_decision"
+  - source: "structure_capital"
+    target: "validate_bank_facility"
+  - source: "treasury_director_approval"
+    target: "validate_bank_facility"
+  - source: "validate_bank_facility"
+    target: "dispatch_drawdown"
+  - source: "dispatch_drawdown"
+    target: "END"
+

@@ -17,7 +17,11 @@ from agent_bpmn.server.routes.inbox import router as inbox_router
 from agent_bpmn.server.routes.telemetry import router as telemetry_router
 from agent_bpmn.server.routes.simulation import router as simulation_router
 from agent_bpmn.server.routes.governance import router as governance_router
-import examples.sample_blocks  # Ensure blocks are registered
+import agent_bpmn.blocks.builtin  # Ensure production domain blocks are registered
+try:
+    import examples.sample_blocks
+except ModuleNotFoundError:
+    pass
 
 
 @asynccontextmanager

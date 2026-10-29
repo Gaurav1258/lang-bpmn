@@ -26,7 +26,7 @@ export const NewWorkflowModal: React.FC<NewWorkflowModalProps> = ({ onClose, onW
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
   const [department, setDepartment] = useState('Finance Operations');
   const [description, setDescription] = useState('');
-  const [template, setTemplate] = useState<'blank' | 'linear' | 'dmn' | 'hitl'>('linear');
+  const [template, setTemplate] = useState<'blank' | 'linear' | 'dmn' | 'hitl' | 'scf'>('scf');
   const [maxBudget, setMaxBudget] = useState<number>(0.5);
   const [maxLoops, setMaxLoops] = useState<number>(3);
   const [timeoutSecs, setTimeoutSecs] = useState<number>(600);
@@ -83,6 +83,13 @@ export const NewWorkflowModal: React.FC<NewWorkflowModalProps> = ({ onClose, onW
       icon: <Layers className="w-5 h-5 text-slate-400" />,
       description: 'Clean starter flow with START, sample block, and END. Best for custom-tailored topologies.',
       badge: 'Minimal',
+    },
+    {
+      id: 'scf',
+      title: 'Autonomous SCF Floating Engine',
+      icon: <Sparkles className="w-5 h-5 text-emerald-400" />,
+      description: 'Supply Chain Finance: Counterparty risk screening → Cash forecasting → Dynamic Discounting vs Reverse Factoring → Bank Facility Drawdown.',
+      badge: 'Autonomous SCF',
     },
     {
       id: 'linear',
@@ -179,6 +186,7 @@ export const NewWorkflowModal: React.FC<NewWorkflowModalProps> = ({ onClose, onW
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition-colors"
               >
+                <option value="Supply Chain Finance">Supply Chain Finance</option>
                 <option value="Finance Operations">Finance Operations</option>
                 <option value="Regulatory Compliance">Regulatory Compliance</option>
                 <option value="Customer Support">Customer Support</option>
@@ -306,3 +314,4 @@ export const NewWorkflowModal: React.FC<NewWorkflowModalProps> = ({ onClose, onW
     </div>
   );
 };
+

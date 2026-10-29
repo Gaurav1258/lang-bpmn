@@ -124,3 +124,43 @@ def test_step2_6_ast_yaml_roundtrip_serialization():
     assert len(reloaded_wf.nodes) == len(original_wf.nodes)
     assert len(reloaded_wf.edges) == len(original_wf.edges)
 
+
+def test_step2_7_autonomous_scf_workflow_compilation_and_execution():
+    """Verify autonomous SCF treasury workflow passes linting and compiles to LangGraph."""
+    yaml_path = Path("examples/sample_workflows/autonomous_scf_governance_workflow.yaml")
+    wf = parse_workflow_yaml(yaml_path)
+
+    linter = WorkflowLinter(registry=registry)
+    lint_result = linter.lint(wf)
+    assert lint_result.is_valid, f"Linting failed: {lint_result.errors}"
+
+    compiler = GraphCompiler(registry=registry)
+    compiled = compiler.compile(wf)
+    assert compiled is not None
+    assert compiled.workflow.metadata.id == "autonomous_scf_treasury_governance"
+
+    # Execute with clean low-risk payload that routes automatically to structure_capital -> validate -> dispatch
+    input_payload = {
+        "supplier_id": "SUP-8821-ACME",
+        "supplier_name": "Acme Clean Industrial Tech",
+        "invoice_amount_usd": 24000.0,
+        "buyer_id": "BUYER-CORP-001",
+        "target_dpo_days": 60,
+        "horizon_days": 60,
+        "days_to_maturity": 45,
+        "bank_facility_id": "FACILITY-CITI-REV-909",
+        "invoice_number": "INV-2026-SCF-101",
+    }
+    result = compiled.invoke(input_payload)
+    assert result["__history__"] == [
+        "screen_supplier_risk",
+        "forecast_liquidity",
+        "scf_routing_decision",
+        "structure_capital",
+        "validate_bank_facility",
+        "dispatch_drawdown",
+    ]
+    assert result["is_facility_approved"] is True
+    assert result["execution_status"] == "FUNDS_DISBURSED_TO_SUPPLIER_ACCOUNT"
+
+

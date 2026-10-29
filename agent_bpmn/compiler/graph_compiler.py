@@ -326,11 +326,19 @@ class GraphCompiler:
             # 3. Extract and map inputs from graph state
             payload: Dict[str, Any] = {}
             for block_param, mapping_spec in node.input_mapping.items():
-                if isinstance(mapping_spec, str) and mapping_spec.startswith("$"):
-                    state_key = mapping_spec.lstrip("$").replace("state.", "")
-                    payload[block_param] = state.get(state_key)
-                elif isinstance(mapping_spec, str) and mapping_spec in state:
-                    payload[block_param] = state[mapping_spec]
+                if isinstance(mapping_spec, str):
+                    clean_key = mapping_spec.lstrip("$")
+                    if clean_key.startswith("input."):
+                        clean_key = clean_key.split(".", 1)[1]
+                    elif clean_key.startswith("state."):
+                        clean_key = clean_key.split(".", 1)[1]
+
+                    if clean_key in state:
+                        payload[block_param] = state[clean_key]
+                    elif mapping_spec in state:
+                        payload[block_param] = state[mapping_spec]
+                    else:
+                        payload[block_param] = mapping_spec
                 else:
                     payload[block_param] = mapping_spec
 

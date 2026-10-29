@@ -17,19 +17,38 @@ from agent_bpmn.dsl import (
     dump_workflow_yaml,
     parse_workflow_yaml,
 )
+import os
 from agent_bpmn.sdk.registry import registry
-import examples.sample_blocks  # Ensure blocks are registered
+import agent_bpmn.blocks.builtin  # Ensure production domain blocks are registered
+try:
+    import examples.sample_blocks
+except ModuleNotFoundError:
+    pass
 
 router = APIRouter(prefix="/api/workflows", tags=["Workflows"])
 
-SAMPLE_WORKFLOWS_DIR = Path("examples/sample_workflows")
+def _get_workflows_dir() -> Path:
+    env_dir = os.getenv("WORKFLOWS_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    if Path("workflows").exists():
+        return Path("workflows")
+    if Path("examples/sample_workflows").exists():
+        return Path("examples/sample_workflows")
+    p = Path("workflows")
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+SAMPLE_WORKFLOWS_DIR = _get_workflows_dir()
 
 
 def _safe_workflow_path(file_name: str) -> Path:
     safe_name = Path(file_name).name
     if not safe_name.endswith(".yaml"):
         safe_name = f"{safe_name}.yaml"
-    return SAMPLE_WORKFLOWS_DIR / safe_name
+    return _get_workflows_dir() / safe_name
 
 
 class WorkflowYamlPayload(BaseModel):
@@ -226,6 +245,62 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
             WorkflowEdge(source="cfo_approval_node", target="auto_settlement"),
             WorkflowEdge(source="auto_settlement", target="END"),
         ]
+    elif template == "scf":
+        nodes = [
+            WorkflowNode(
+                id="screen_supplier_risk",
+                type=NodeType.BLOCK,
+                name="Screen Supplier Counterparty Risk",
+                block="scf.risk_sentinel",
+                input_mapping={"supplier_id": "input.supplier_id", "supplier_name": "input.supplier_name", "invoice_amount_usd": "input.invoice_amount_usd"},
+                output_mapping={"supplier_risk_score": "supplier_risk_score", "is_counterparty_flagged": "is_counterparty_flagged", "acceptance_probability": "acceptance_probability"},
+                max_retries=3,
+            ),
+            WorkflowNode(
+                id="forecast_liquidity",
+                type=NodeType.BLOCK,
+                name="Project 60-Day Corporate Liquidity",
+                block="scf.cash_forecaster",
+                input_mapping={"corporate_buyer_id": "input.buyer_id", "target_dpo_days": "input.target_dpo_days", "horizon_days": "input.horizon_days"},
+                output_mapping={"projected_cash_buffer_usd": "projected_cash_buffer_usd", "liquidity_status": "liquidity_status"},
+                max_retries=2,
+            ),
+            WorkflowNode(
+                id="structure_capital",
+                type=NodeType.BLOCK,
+                name="Optimize Early Payment Structure",
+                block="scf.capital_structurer",
+                input_mapping={"invoice_amount_usd": "input.invoice_amount_usd", "days_to_maturity": "input.days_to_maturity", "supplier_acceptance_probability": "state.acceptance_probability"},
+                output_mapping={"recommended_product": "recommended_product", "early_payment_amount_usd": "early_payment_amount_usd", "discount_yield_apr": "discount_yield_apr", "buyer_discount_savings_usd": "buyer_discount_savings_usd"},
+                max_retries=2,
+            ),
+            WorkflowNode(
+                id="validate_bank_facility",
+                type=NodeType.BLOCK,
+                name="Verify Bank Facility Headroom",
+                block="scf.guardrail_validator",
+                input_mapping={"bank_facility_id": "input.bank_facility_id", "drawdown_request_amount_usd": "input.invoice_amount_usd"},
+                output_mapping={"is_facility_approved": "is_facility_approved", "remaining_headroom_usd": "remaining_headroom_usd", "financing_bank_name": "financing_bank_name"},
+                max_retries=2,
+            ),
+            WorkflowNode(
+                id="dispatch_drawdown",
+                type=NodeType.BLOCK,
+                name="Dispatch Bank Drawdown & ERP Settlement",
+                block="scf.treasury_dispatcher",
+                input_mapping={"invoice_number": "input.invoice_number", "supplier_name": "input.supplier_name", "drawdown_amount_usd": "input.invoice_amount_usd", "financing_facility_id": "input.bank_facility_id"},
+                output_mapping={"drawdown_reference_id": "drawdown_reference_id", "execution_status": "execution_status"},
+                max_retries=3,
+            ),
+        ]
+        edges = [
+            WorkflowEdge(source="START", target="screen_supplier_risk"),
+            WorkflowEdge(source="screen_supplier_risk", target="forecast_liquidity"),
+            WorkflowEdge(source="forecast_liquidity", target="structure_capital"),
+            WorkflowEdge(source="structure_capital", target="validate_bank_facility"),
+            WorkflowEdge(source="validate_bank_facility", target="dispatch_drawdown"),
+            WorkflowEdge(source="dispatch_drawdown", target="END"),
+        ]
     else:  # Blank starter
         nodes = [
             WorkflowNode(
@@ -256,8 +331,9 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
 def list_sample_workflows() -> List[Dict[str, Any]]:
     """Lists available sample workflows with their metadata."""
     results = []
-    if SAMPLE_WORKFLOWS_DIR.exists():
-        for yaml_file in sorted(SAMPLE_WORKFLOWS_DIR.glob("*.yaml")):
+    wf_dir = _get_workflows_dir()
+    if wf_dir.exists():
+        for yaml_file in sorted(wf_dir.glob("*.yaml")):
             try:
                 wf = parse_workflow_yaml(yaml_file)
                 results.append({
@@ -299,7 +375,7 @@ def create_workflow(payload: CreateWorkflowPayload) -> Dict[str, Any]:
     path = _safe_workflow_path(file_name)
     yaml_str = dump_workflow_yaml(wf)
 
-    SAMPLE_WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(yaml_str)
 
@@ -414,7 +490,8 @@ async def execute_workflow(payload: WorkflowExecutePayload) -> Dict[str, Any]:
         wf = parse_workflow_yaml(payload.workflow_yaml)
     elif payload.workflow_id:
         target_path = None
-        for p in SAMPLE_WORKFLOWS_DIR.glob("*.yaml"):
+        wf_dir = _get_workflows_dir()
+        for p in wf_dir.glob("*.yaml"):
             try:
                 candidate = parse_workflow_yaml(p)
                 if candidate.metadata.id == payload.workflow_id:
