@@ -57,8 +57,17 @@ from agent_bpmn.sdk import (
     domain_block,
     registry,
 )
+from agent_bpmn.simulation import (
+    CandidateCaseResult,
+    HistoricalCase,
+    RouteShiftMetric,
+    SimulationDataset,
+    SimulationEngine,
+    SimulationImpactDiff,
+    SimulationReport,
+)
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "domain_block",
@@ -106,4 +115,11 @@ __all__ = [
     "telemetry_aggregator",
     "WorkflowHeatmap",
     "NodeHeatmapMetric",
+    "HistoricalCase",
+    "SimulationDataset",
+    "CandidateCaseResult",
+    "RouteShiftMetric",
+    "SimulationImpactDiff",
+    "SimulationReport",
+    "SimulationEngine",
 ]

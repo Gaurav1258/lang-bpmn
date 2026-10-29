@@ -319,12 +319,14 @@ lang-bpmn/
 ├── verify_hybrid_routing.py       # Hybrid routing (DMN + Semantic) verification script
 ├── verify_approval_inbox.py       # Enterprise HITL & Approval Inbox verification script
 ├── verify_guardrails_and_heatmap.py # Guardrails & Process Heatmap verification script
+├── verify_simulation_replay.py    # Shadow Mode & Pre-Flight Simulation verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
     ├── test_hybrid_routing.py
     ├── test_approval_inbox.py
-    └── test_guardrails_and_heatmap.py
+    ├── test_guardrails_and_heatmap.py
+    └── test_simulation_replay.py
 ```
 
 ---
@@ -367,8 +369,11 @@ lang-bpmn/
 * [x] Verification runner (`verify_guardrails_and_heatmap.py`) demonstrated in visible terminal.
 
 ### Phase 6: Shadow Mode & Pre-Flight Replay Engine
-* [ ] Build checkpointer state replayer to run $N$ historical cases through modified ASTs.
-* [ ] Build impact diff calculator comparing route distribution, costs, and execution errors.
+* [x] Build checkpointer & historical telemetry dataset replayer to run $N$ production cases through modified ASTs.
+* [x] Build sandboxed simulation executor preventing live side-effects during pre-flight evaluation.
+* [x] Build impact diff calculator comparing route distribution shifts, financial cost deltas, and latency changes.
+* [x] Automated unit test suite (`tests/test_simulation_replay.py`) passing 100% (6/6 tests).
+* [x] Verification runner (`verify_simulation_replay.py`) demonstrated in visible terminal.
 
 ### Phase 7: Web Studio UI (React + React Flow / BPMN)
 * [ ] Scaffold React + Vite + Tailwind + shadcn UI frontend.
