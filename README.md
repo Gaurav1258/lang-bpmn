@@ -227,7 +227,7 @@ See [ARCHITECTURE_AND_PLAN.md](file:///d:/Projects/lang-bpmn/ARCHITECTURE_AND_PL
 - [x] **Phase 1: Foundation & Domain Block SDK**
 - [x] **Phase 2: Declarative AST & LangGraph Compiler**
 - [x] **Phase 3: Hybrid Routing (DMN Tables + Semantic Enums)**
-- [ ] **Phase 4: Enterprise Human-in-the-Loop Inbox**
+- [x] **Phase 4: Enterprise Human-in-the-Loop Inbox**
 - [ ] **Phase 5: Visual Studio Canvas (React/Vite)**
 - [ ] **Phase 6: Guardrails, Simulation Sandbox & Git Governance**
 

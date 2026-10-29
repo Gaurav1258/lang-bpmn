@@ -317,10 +317,12 @@ lang-bpmn/
 ├── verify_domain_blocks.py        # Domain block verification & demo script
 ├── verify_workflow_compiler.py    # Declarative compiler verification script
 ├── verify_hybrid_routing.py       # Hybrid routing (DMN + Semantic) verification script
+├── verify_approval_inbox.py       # Enterprise HITL & Approval Inbox verification script
 └── tests/                         # Comprehensive Test Suite
     ├── test_domain_block_sdk.py
     ├── test_workflow_compiler.py
     ├── test_hybrid_routing.py
+    ├── test_approval_inbox.py
 ```
 
 ---
@@ -348,10 +350,12 @@ lang-bpmn/
 * [x] Verification runner (`verify_hybrid_routing.py`) demonstrated in visible terminal.
 
 ### Phase 4: Enterprise Human-in-the-Loop (HITL) Task Engine
-* [ ] Implement `HumanReviewNode` compiler integration using LangGraph `interrupt_before`.
-* [ ] Build Task Inbox backend service with role-based filtering (`assigned_role`).
-* [ ] Implement dynamic resume command dispatcher (`Command(resume=...)`).
-* [ ] Build background SLA timer watchdog to handle automatic escalation on timeout.
+* [x] Implement `HumanReviewNode` compiler integration using LangGraph interrupt checkpointing.
+* [x] Build Task Inbox backend service with role-based filtering (`assigned_role`).
+* [x] Implement dynamic resume command dispatcher (`Command(resume=...)`) supporting actions and state edits.
+* [x] Build background SLA timer watchdog to handle automatic escalation on timeout.
+* [x] Automated unit test suite (`tests/test_approval_inbox.py`) passing 100%.
+* [x] Verification runner (`verify_approval_inbox.py`) demonstrated in visible terminal.
 
 ### Phase 5: Budget Guardrails & Operational Heatmap Telemetry
 * [ ] Inject iteration counter guardrails into cyclic loop edges.

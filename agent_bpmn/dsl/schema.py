@@ -56,6 +56,22 @@ class SemanticRouterConfig(BaseModel):
     default_target: Optional[str] = Field(default=None, description="Fallback target if intent is ambiguous")
 
 
+class HumanReviewConfig(BaseModel):
+    """Configuration for an Enterprise Human-in-the-Loop review & approval node."""
+    model_config = ConfigDict(extra="ignore")
+
+    title: str = Field(..., description="Task title displayed in the Enterprise Approval Inbox")
+    description: Optional[str] = Field(default=None, description="Detailed instructions for the human reviewer")
+    assigned_role: str = Field(default="role:general_operator", description="Okta/AD role authorized to approve (e.g. 'role:L2_Compliance_Analyst')")
+    allowed_actions: List[str] = Field(
+        default_factory=lambda: ["APPROVE", "REJECT", "EDIT_AND_APPROVE"],
+        description="Allowed decision actions",
+    )
+    sla_timeout_seconds: Optional[int] = Field(default=14400, ge=1, description="SLA duration in seconds before escalation")
+    escalation_target: Optional[str] = Field(default=None, description="Fallback target node if SLA is breached")
+    form_fields: Optional[List[str]] = Field(default=None, description="Subset of graph state fields to display in review form")
+
+
 class WorkflowMetadata(BaseModel):
     """Business and regulatory metadata for the workflow."""
     model_config = ConfigDict(extra="ignore")
@@ -97,6 +113,7 @@ class WorkflowNode(BaseModel):
     )
     dmn_config: Optional[DMNTableConfig] = Field(default=None, description="Decision rules if type='dmn_table'")
     semantic_config: Optional[SemanticRouterConfig] = Field(default=None, description="Semantic routes if type='semantic_router'")
+    human_review_config: Optional[HumanReviewConfig] = Field(default=None, description="HITL approval settings if type='human_review'")
     config: Dict[str, Any] = Field(default_factory=dict, description="Node-specific configuration parameters")
 
 

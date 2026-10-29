@@ -1,0 +1,78 @@
+version: "1.0"
+metadata:
+  id: "enterprise_hitl_invoice_approval"
+  name: "Enterprise Human-in-the-Loop Invoice Approval"
+  version: "1.3.0"
+  description: "End-to-end invoice processing pipeline with an automated Human Review node assigned to Okta role:L2_Compliance_Analyst and SLA timer."
+  owner_department: "Compliance & Operations"
+
+guardrails:
+  max_total_budget_usd: 0.15
+  workflow_timeout_seconds: 14400
+  max_loop_iterations: 1
+
+nodes:
+  - id: "extract_invoice"
+    type: "block"
+    name: "Extract Invoice Line Items"
+    block: "finance.invoice_extractor"
+    input_mapping:
+      document_url: "$invoice_pdf_url"
+      vendor_tax_id: "$tax_id"
+    output_mapping:
+      invoice_number: "invoice_number"
+      vendor_name: "vendor_name"
+      total_amount_usd: "invoice_total_usd"
+      line_items: "extracted_line_items"
+
+  - id: "l2_compliance_review"
+    type: "human_review"
+    name: "L2 Compliance Analyst Review"
+    human_review_config:
+      title: "Review Suspicious Vendor Invoice"
+      description: "Counterparty flagged for manual KYC/AML audit. Review extracted line items and choose decision."
+      assigned_role: "role:L2_Compliance_Analyst"
+      allowed_actions:
+        - "APPROVE"
+        - "REJECT"
+        - "EDIT_AND_APPROVE"
+      sla_timeout_seconds: 14400
+      escalation_target: "compliance_director_override"
+      form_fields:
+        - "invoice_number"
+        - "vendor_name"
+        - "invoice_total_usd"
+
+  - id: "post_approval_decision"
+    type: "dmn_table"
+    name: "Post-Review DMN Gateway"
+    dmn_config:
+      hit_policy: "FIRST_MATCH"
+      rules:
+        - condition: "l2_compliance_review_decision in ['APPROVE', 'EDIT_AND_APPROVE']"
+          target: "auto_payment_settlement"
+          description: "Proceed to payment if approved by human compliance analyst"
+      default_target: "END"
+
+  - id: "auto_payment_settlement"
+    type: "block"
+    name: "Automated Payment Settlement"
+    block: "finance.auto_settlement"
+    input_mapping:
+      invoice_number: "$invoice_number"
+      amount_usd: "$invoice_total_usd"
+      vendor_name: "$vendor_name"
+    output_mapping:
+      transaction_id: "settlement_txn_id"
+      status: "workflow_final_status"
+
+edges:
+  - source: "START"
+    target: "extract_invoice"
+  - source: "extract_invoice"
+    target: "l2_compliance_review"
+  - source: "l2_compliance_review"
+    target: "post_approval_decision"
+  - source: "auto_payment_settlement"
+    target: "END"
+

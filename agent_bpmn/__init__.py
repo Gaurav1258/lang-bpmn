@@ -19,6 +19,7 @@ from agent_bpmn.dsl import (
     DMNRule,
     DMNTableConfig,
     HitPolicy,
+    HumanReviewConfig,
     NodeType,
     SemanticRoute,
     SemanticRouterConfig,
@@ -33,6 +34,12 @@ from agent_bpmn.dsl import (
     parse_workflow_json,
     parse_workflow_yaml,
 )
+from agent_bpmn.runtime import (
+    ApprovalInboxService,
+    ApprovalTask,
+    TaskStatus,
+    inbox_service,
+)
 from agent_bpmn.sdk import (
     BlockExecutionError,
     BlockValidationError,
@@ -44,7 +51,7 @@ from agent_bpmn.sdk import (
     registry,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "domain_block",
@@ -66,6 +73,7 @@ __all__ = [
     "DMNTableConfig",
     "SemanticRoute",
     "SemanticRouterConfig",
+    "HumanReviewConfig",
     "parse_workflow_yaml",
     "parse_workflow_json",
     "dump_workflow_yaml",
@@ -80,4 +88,8 @@ __all__ = [
     "SemanticCompilationError",
     "SemanticIntentClassifier",
     "compile_semantic_router",
+    "ApprovalTask",
+    "TaskStatus",
+    "ApprovalInboxService",
+    "inbox_service",
 ]
