@@ -220,6 +220,54 @@ edges:
 
 ---
 
+## 🚀 How to Run the Project
+
+### 1. Prerequisites
+- Python 3.10+ (managed via `uv` or virtualenv)
+- Node.js 18+ (for frontend Studio)
+
+### 2. Quickstart (One Command)
+To launch the backend API gateway, serve the React Web Studio, and automatically open your browser:
+```powershell
+python run_studio.py
+```
+- **Web Studio Canvas UI:** [http://localhost:8000](http://localhost:8000)
+- **Interactive OpenAPI/Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 3. Frontend Development Server (Live Hot-Reload)
+For modifying the React Studio UI with hot-module replacement (Vite):
+```powershell
+# Terminal 1: Backend API Gateway
+python -m uvicorn agent_bpmn.server.app:app --port 8000 --reload
+
+# Terminal 2: Vite Dev Server
+cd studio
+npm install
+npm run dev
+```
+Open [http://localhost:5173](http://localhost:5173).
+
+### 4. Running the Full Test Suite
+Execute all 49 unit and integration tests across all 8 architectural pillars:
+```powershell
+pytest -v
+```
+
+### 5. Running Phase-by-Phase Verification Scripts
+Each milestone includes a dedicated demonstration runner:
+```powershell
+python verify_domain_blocks.py          # Phase 1: SDK & Pydantic Contracts
+python verify_workflow_compiler.py      # Phase 2: LangGraph Compilation
+python verify_hybrid_routing.py         # Phase 3: DMN & Semantic Routing
+python verify_approval_inbox.py         # Phase 4: HITL Task Inbox
+python verify_guardrails_and_heatmap.py # Phase 5: Guardrails & Optimize Heatmap
+python verify_simulation_replay.py      # Phase 6: Shadow Mode Pre-Flight Replay
+python verify_web_studio.py             # Phase 7: Web Studio & API Gateway
+python verify_git_governance.py         # Phase 8: Git Governance & Audit Logs
+```
+
+---
+
 ## 🗺️ Project Status & Development Roadmap
 
 See [ARCHITECTURE_AND_PLAN.md](https://github.com/Gaurav1258/lang-bpmn/ARCHITECTURE_AND_PLAN.md) for the end-to-end phased development plan.
