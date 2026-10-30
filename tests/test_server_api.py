@@ -118,6 +118,9 @@ def test_step7_6_telemetry_and_simulation_endpoints(client):
 
 def test_step7_7_frontend_studio_spa_served(client):
     """Verify FastAPI server serves the compiled React Web Studio SPA index.html."""
+    dist_index = Path("studio/dist/index.html")
+    if not dist_index.exists():
+        pytest.skip("Frontend studio/dist not compiled yet (normal during headless Python CI)")
     res = client.get("/")
     assert res.status_code == 200
     assert "AgentBPMN Studio" in res.text
