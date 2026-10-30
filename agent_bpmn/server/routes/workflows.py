@@ -1,12 +1,16 @@
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from agent_bpmn.compiler import GraphCompiler
 from agent_bpmn.dsl import (
+    DMNRule,
+    DMNTableConfig,
     HitPolicy,
+    HumanReviewConfig,
     NodeType,
     WorkflowDefinition,
     WorkflowEdge,
@@ -17,15 +21,25 @@ from agent_bpmn.dsl import (
     dump_workflow_yaml,
     parse_workflow_yaml,
 )
-import os
+from agent_bpmn.runtime.hitl_inbox import inbox_service
+from agent_bpmn.runtime.telemetry import telemetry_aggregator
 from agent_bpmn.sdk.registry import registry
 import agent_bpmn.blocks.builtin  # Ensure production domain blocks are registered
+
 try:
     import examples.sample_blocks
 except ModuleNotFoundError:
     pass
 
 router = APIRouter(prefix="/api/workflows", tags=["Workflows"])
+
+# Shared compiler instance so checkpoints persist across API requests
+shared_compiler = GraphCompiler(
+    registry=registry,
+    inbox_service=inbox_service,
+    telemetry_aggregator=telemetry_aggregator,
+)
+
 
 def _get_workflows_dir() -> Path:
     env_dir = os.getenv("WORKFLOWS_DIR")
@@ -40,6 +54,7 @@ def _get_workflows_dir() -> Path:
     p = Path("workflows")
     p.mkdir(parents=True, exist_ok=True)
     return p
+
 
 SAMPLE_WORKFLOWS_DIR = _get_workflows_dir()
 
@@ -57,6 +72,7 @@ class WorkflowYamlPayload(BaseModel):
 
 class WorkflowExecutePayload(BaseModel):
     workflow_yaml: Optional[str] = None
+    workflow_ast: Optional[Dict[str, Any]] = None
     workflow_id: Optional[str] = None
     input_payload: Dict[str, Any]
 
@@ -66,7 +82,7 @@ class CreateWorkflowPayload(BaseModel):
     name: str
     description: Optional[str] = ""
     department: Optional[str] = "Finance Operations"
-    template: Optional[str] = "blank"  # blank, linear, dmn, hitl, semantic
+    template: Optional[str] = "blank"  # blank, linear, dmn, hitl, scf
     yaml_content: Optional[str] = None
     max_budget_usd: Optional[float] = 0.50
     max_loop_iterations: Optional[int] = 3
@@ -88,9 +104,8 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
         id=raw_id,
         name=payload.name,
         version="1.0.0",
-        department=payload.department or "Finance Operations",
+        owner_department=payload.department or "Finance Operations",
         description=payload.description or f"Orchestrated process for {payload.name}",
-        author="Enterprise Studio Architect",
     )
 
     guardrails = WorkflowGuardrails(
@@ -108,8 +123,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Extract Invoice Line Items",
                 block="finance.invoice_extractor",
-                input_mapping={"document_url": "input.invoice_pdf_url", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"extracted_invoice_num": "invoice_number", "invoice_total_usd": "total_amount_usd", "entity_name": "vendor_name"},
+                input_mapping={
+                    "document_url": "input.invoice_pdf_url",
+                    "vendor_tax_id": "input.tax_id",
+                },
+                output_mapping={
+                    "invoice_number": "extracted_invoice_num",
+                    "total_amount_usd": "invoice_total_usd",
+                    "vendor_name": "entity_name",
+                },
                 max_retries=3,
             ),
             WorkflowNode(
@@ -117,8 +139,16 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Screen Sanctions & Watchlists",
                 block="compliance.sanctions_screener",
-                input_mapping={"entity_name": "state.entity_name", "country_code": "input.country_code", "transaction_amount_usd": "state.invoice_total_usd"},
-                output_mapping={"sanctions_is_flagged": "is_flagged", "sanctions_risk_score": "risk_score"},
+                input_mapping={
+                    "entity_name": "state.entity_name",
+                    "country_code": "input.country_code",
+                    "transaction_amount_usd": "state.invoice_total_usd",
+                },
+                output_mapping={
+                    "is_flagged": "sanctions_is_flagged",
+                    "risk_score": "sanctions_risk_score",
+                    "compliance_note": "compliance_audit_summary",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
@@ -126,8 +156,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Automated Payment Settlement",
                 block="finance.auto_settlement",
-                input_mapping={"invoice_number": "state.extracted_invoice_num", "amount_usd": "state.invoice_total_usd", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"settlement_tx_id": "transaction_id", "settlement_status": "status"},
+                input_mapping={
+                    "invoice_number": "state.extracted_invoice_num",
+                    "amount_usd": "state.invoice_total_usd",
+                    "vendor_name": "state.entity_name",
+                },
+                output_mapping={
+                    "transaction_id": "settlement_txn_id",
+                    "status": "workflow_final_status",
+                },
                 max_retries=3,
             ),
         ]
@@ -137,6 +174,7 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
             WorkflowEdge(source="screen_sanctions", target="auto_settlement"),
             WorkflowEdge(source="auto_settlement", target="END"),
         ]
+
     elif template == "dmn":
         nodes = [
             WorkflowNode(
@@ -144,8 +182,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Extract Invoice Line Items",
                 block="finance.invoice_extractor",
-                input_mapping={"document_url": "input.invoice_pdf_url", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"extracted_invoice_num": "invoice_number", "invoice_total_usd": "total_amount_usd", "entity_name": "vendor_name"},
+                input_mapping={
+                    "document_url": "input.invoice_pdf_url",
+                    "vendor_tax_id": "input.tax_id",
+                },
+                output_mapping={
+                    "invoice_number": "extracted_invoice_num",
+                    "total_amount_usd": "invoice_total_usd",
+                    "vendor_name": "entity_name",
+                },
                 max_retries=3,
             ),
             WorkflowNode(
@@ -153,31 +198,45 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Screen Sanctions Watchlist",
                 block="compliance.sanctions_screener",
-                input_mapping={"entity_name": "state.entity_name", "country_code": "input.country_code", "transaction_amount_usd": "state.invoice_total_usd"},
-                output_mapping={"sanctions_is_flagged": "is_flagged", "sanctions_risk_score": "risk_score"},
+                input_mapping={
+                    "entity_name": "state.entity_name",
+                    "country_code": "input.country_code",
+                    "transaction_amount_usd": "state.invoice_total_usd",
+                },
+                output_mapping={
+                    "is_flagged": "sanctions_is_flagged",
+                    "risk_score": "sanctions_risk_score",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
                 id="decision_matrix",
                 type=NodeType.DMN_TABLE,
                 name="Risk & Amount Routing Matrix",
-                dmn_config={
-                    "hit_policy": "FIRST_MATCH",
-                    "rules": [
-                        {"condition": "sanctions_is_flagged == True", "target": "emergency_review"},
-                        {"condition": "invoice_total_usd > 10000", "target": "emergency_review"},
-                        {"condition": "invoice_total_usd <= 10000", "target": "auto_settlement"},
+                dmn_config=DMNTableConfig(
+                    hit_policy=HitPolicy.FIRST_MATCH,
+                    rules=[
+                        DMNRule(condition="sanctions_is_flagged == True", target="emergency_review", description="Flagged on watchlist"),
+                        DMNRule(condition="invoice_total_usd > 10000", target="emergency_review", description="High value invoice"),
+                        DMNRule(condition="invoice_total_usd <= 10000", target="auto_settlement", description="Clean low value"),
                     ],
-                    "default_target": "emergency_review",
-                },
+                    default_target="emergency_review",
+                ),
             ),
             WorkflowNode(
                 id="auto_settlement",
                 type=NodeType.BLOCK,
                 name="Automated Payment Settlement",
                 block="finance.auto_settlement",
-                input_mapping={"invoice_number": "state.extracted_invoice_num", "amount_usd": "state.invoice_total_usd", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"settlement_tx_id": "transaction_id", "settlement_status": "status"},
+                input_mapping={
+                    "invoice_number": "state.extracted_invoice_num",
+                    "amount_usd": "state.invoice_total_usd",
+                    "vendor_name": "state.entity_name",
+                },
+                output_mapping={
+                    "transaction_id": "settlement_txn_id",
+                    "status": "workflow_final_status",
+                },
                 max_retries=3,
             ),
             WorkflowNode(
@@ -185,8 +244,14 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Compliance Investigation",
                 block="compliance.emergency_review",
-                input_mapping={"entity_name": "state.entity_name", "risk_score": "state.sanctions_risk_score"},
-                output_mapping={"docket_id": "case_docket_id"},
+                input_mapping={
+                    "entity_name": "state.entity_name",
+                    "risk_score": "state.sanctions_risk_score",
+                },
+                output_mapping={
+                    "case_docket_id": "review_docket_id",
+                    "status": "workflow_final_status",
+                },
                 max_retries=2,
             ),
         ]
@@ -197,6 +262,7 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
             WorkflowEdge(source="auto_settlement", target="END"),
             WorkflowEdge(source="emergency_review", target="END"),
         ]
+
     elif template == "hitl":
         nodes = [
             WorkflowNode(
@@ -204,8 +270,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Extract Invoice Line Items",
                 block="finance.invoice_extractor",
-                input_mapping={"document_url": "input.invoice_pdf_url", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"extracted_invoice_num": "invoice_number", "invoice_total_usd": "total_amount_usd", "entity_name": "vendor_name"},
+                input_mapping={
+                    "document_url": "input.invoice_pdf_url",
+                    "vendor_tax_id": "input.tax_id",
+                },
+                output_mapping={
+                    "invoice_number": "extracted_invoice_num",
+                    "total_amount_usd": "invoice_total_usd",
+                    "vendor_name": "entity_name",
+                },
                 max_retries=3,
             ),
             WorkflowNode(
@@ -213,28 +286,43 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Screen Sanctions Watchlist",
                 block="compliance.sanctions_screener",
-                input_mapping={"entity_name": "state.entity_name", "country_code": "input.country_code", "transaction_amount_usd": "state.invoice_total_usd"},
-                output_mapping={"sanctions_is_flagged": "is_flagged", "sanctions_risk_score": "risk_score"},
+                input_mapping={
+                    "entity_name": "state.entity_name",
+                    "country_code": "input.country_code",
+                    "transaction_amount_usd": "state.invoice_total_usd",
+                },
+                output_mapping={
+                    "is_flagged": "sanctions_is_flagged",
+                    "risk_score": "sanctions_risk_score",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
                 id="cfo_approval_node",
                 type=NodeType.HUMAN_REVIEW,
                 name="Executive Review Checkpoint",
-                human_review_config={
-                    "assigned_role": "role:finance_executive",
-                    "sla_hours": 4,
-                    "allowed_actions": ["APPROVE", "REJECT", "EDIT_AND_APPROVE"],
-                    "timeout_action": "REJECT",
-                },
+                human_review_config=HumanReviewConfig(
+                    title="Executive Sign-Off Required for Invoice",
+                    description="Verify extracted invoice amount and sanctions screening results before settlement.",
+                    assigned_role="role:finance_executive",
+                    sla_timeout_seconds=14400,
+                    allowed_actions=["APPROVE", "REJECT", "EDIT_AND_APPROVE"],
+                ),
             ),
             WorkflowNode(
                 id="auto_settlement",
                 type=NodeType.BLOCK,
                 name="Automated Payment Settlement",
                 block="finance.auto_settlement",
-                input_mapping={"invoice_number": "state.extracted_invoice_num", "amount_usd": "state.invoice_total_usd", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"settlement_tx_id": "transaction_id", "settlement_status": "status"},
+                input_mapping={
+                    "invoice_number": "state.extracted_invoice_num",
+                    "amount_usd": "state.invoice_total_usd",
+                    "vendor_name": "state.entity_name",
+                },
+                output_mapping={
+                    "transaction_id": "settlement_txn_id",
+                    "status": "workflow_final_status",
+                },
                 max_retries=3,
             ),
         ]
@@ -245,6 +333,7 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
             WorkflowEdge(source="cfo_approval_node", target="auto_settlement"),
             WorkflowEdge(source="auto_settlement", target="END"),
         ]
+
     elif template == "scf":
         nodes = [
             WorkflowNode(
@@ -252,8 +341,16 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Screen Supplier Counterparty Risk",
                 block="scf.risk_sentinel",
-                input_mapping={"supplier_id": "input.supplier_id", "supplier_name": "input.supplier_name", "invoice_amount_usd": "input.invoice_amount_usd"},
-                output_mapping={"supplier_risk_score": "supplier_risk_score", "is_counterparty_flagged": "is_counterparty_flagged", "acceptance_probability": "acceptance_probability"},
+                input_mapping={
+                    "supplier_id": "input.supplier_id",
+                    "supplier_name": "input.supplier_name",
+                    "invoice_amount_usd": "input.invoice_amount_usd",
+                },
+                output_mapping={
+                    "supplier_risk_score": "supplier_risk_score",
+                    "is_counterparty_flagged": "is_counterparty_flagged",
+                    "acceptance_probability": "acceptance_probability",
+                },
                 max_retries=3,
             ),
             WorkflowNode(
@@ -261,8 +358,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Project 60-Day Corporate Liquidity",
                 block="scf.cash_forecaster",
-                input_mapping={"corporate_buyer_id": "input.buyer_id", "target_dpo_days": "input.target_dpo_days", "horizon_days": "input.horizon_days"},
-                output_mapping={"projected_cash_buffer_usd": "projected_cash_buffer_usd", "liquidity_status": "liquidity_status"},
+                input_mapping={
+                    "corporate_buyer_id": "input.buyer_id",
+                    "target_dpo_days": "input.target_dpo_days",
+                    "horizon_days": "input.horizon_days",
+                },
+                output_mapping={
+                    "projected_cash_buffer_usd": "projected_cash_buffer_usd",
+                    "liquidity_status": "liquidity_status",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
@@ -270,8 +374,17 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Optimize Early Payment Structure",
                 block="scf.capital_structurer",
-                input_mapping={"invoice_amount_usd": "input.invoice_amount_usd", "days_to_maturity": "input.days_to_maturity", "supplier_acceptance_probability": "state.acceptance_probability"},
-                output_mapping={"recommended_product": "recommended_product", "early_payment_amount_usd": "early_payment_amount_usd", "discount_yield_apr": "discount_yield_apr", "buyer_discount_savings_usd": "buyer_discount_savings_usd"},
+                input_mapping={
+                    "invoice_amount_usd": "input.invoice_amount_usd",
+                    "days_to_maturity": "input.days_to_maturity",
+                    "supplier_acceptance_probability": "state.acceptance_probability",
+                },
+                output_mapping={
+                    "recommended_product": "recommended_product",
+                    "early_payment_amount_usd": "early_payment_amount_usd",
+                    "discount_yield_apr": "discount_yield_apr",
+                    "buyer_discount_savings_usd": "buyer_discount_savings_usd",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
@@ -279,8 +392,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Verify Bank Facility Headroom",
                 block="scf.guardrail_validator",
-                input_mapping={"bank_facility_id": "input.bank_facility_id", "drawdown_request_amount_usd": "input.invoice_amount_usd"},
-                output_mapping={"is_facility_approved": "is_facility_approved", "remaining_headroom_usd": "remaining_headroom_usd", "financing_bank_name": "financing_bank_name"},
+                input_mapping={
+                    "bank_facility_id": "input.bank_facility_id",
+                    "drawdown_request_amount_usd": "input.invoice_amount_usd",
+                },
+                output_mapping={
+                    "is_facility_approved": "is_facility_approved",
+                    "remaining_headroom_usd": "remaining_headroom_usd",
+                    "financing_bank_name": "financing_bank_name",
+                },
                 max_retries=2,
             ),
             WorkflowNode(
@@ -288,8 +408,16 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Dispatch Bank Drawdown & ERP Settlement",
                 block="scf.treasury_dispatcher",
-                input_mapping={"invoice_number": "input.invoice_number", "supplier_name": "input.supplier_name", "drawdown_amount_usd": "input.invoice_amount_usd", "financing_facility_id": "input.bank_facility_id"},
-                output_mapping={"drawdown_reference_id": "drawdown_reference_id", "execution_status": "execution_status"},
+                input_mapping={
+                    "invoice_number": "input.invoice_number",
+                    "supplier_name": "input.supplier_name",
+                    "drawdown_amount_usd": "input.invoice_amount_usd",
+                    "financing_facility_id": "input.bank_facility_id",
+                },
+                output_mapping={
+                    "drawdown_reference_id": "drawdown_reference_id",
+                    "execution_status": "execution_status",
+                },
                 max_retries=3,
             ),
         ]
@@ -301,6 +429,7 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
             WorkflowEdge(source="validate_bank_facility", target="dispatch_drawdown"),
             WorkflowEdge(source="dispatch_drawdown", target="END"),
         ]
+
     else:  # Blank starter
         nodes = [
             WorkflowNode(
@@ -308,8 +437,15 @@ def _generate_template_workflow(payload: CreateWorkflowPayload) -> WorkflowDefin
                 type=NodeType.BLOCK,
                 name="Extract Invoice Line Items",
                 block="finance.invoice_extractor",
-                input_mapping={"document_url": "input.invoice_pdf_url", "vendor_tax_id": "input.tax_id"},
-                output_mapping={"extracted_invoice_num": "invoice_number", "invoice_total_usd": "total_amount_usd"},
+                input_mapping={
+                    "document_url": "input.invoice_pdf_url",
+                    "vendor_tax_id": "input.tax_id",
+                },
+                output_mapping={
+                    "invoice_number": "extracted_invoice_num",
+                    "total_amount_usd": "invoice_total_usd",
+                    "vendor_name": "entity_name",
+                },
                 max_retries=3,
             )
         ]
@@ -362,7 +498,6 @@ def create_workflow(payload: CreateWorkflowPayload) -> Dict[str, Any]:
     else:
         wf = _generate_template_workflow(payload)
 
-    # Static linting check
     linter = WorkflowLinter(registry=registry)
     lint_res = linter.lint(wf)
     if not lint_res.is_valid:
@@ -400,7 +535,7 @@ def get_workflow_by_file(file_name: str) -> Dict[str, Any]:
 
     wf = parse_workflow_yaml(content)
     return {
-        "file_name": file_name,
+        "file_name": path.name,
         "yaml_content": content,
         "ast": wf.model_dump(),
     }
@@ -439,7 +574,7 @@ def update_workflow(file_name: str, payload: UpdateWorkflowPayload) -> Dict[str,
         f.write(yaml_str)
 
     return {
-        "file_name": file_name,
+        "file_name": path.name,
         "workflow_id": wf.metadata.id,
         "yaml_content": yaml_str,
         "ast": wf.model_dump(),
@@ -456,8 +591,8 @@ def delete_workflow(file_name: str) -> Dict[str, Any]:
 
     path.unlink()
     return {
-        "file_name": file_name,
-        "message": f"Workflow '{file_name}' deleted successfully.",
+        "file_name": path.name,
+        "message": f"Workflow '{path.name}' deleted successfully.",
     }
 
 
@@ -485,33 +620,42 @@ def lint_workflow(payload: WorkflowYamlPayload) -> Dict[str, Any]:
 
 @router.post("/execute")
 async def execute_workflow(payload: WorkflowExecutePayload) -> Dict[str, Any]:
-    """Compiles and executes a workflow with runtime guardrails and state tracking."""
-    if payload.workflow_yaml:
-        wf = parse_workflow_yaml(payload.workflow_yaml)
+    """Compiles and executes a workflow with runtime guardrails and persistent checkpointing."""
+    if payload.workflow_ast:
+        try:
+            wf = WorkflowDefinition.model_validate(payload.workflow_ast)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid workflow AST: {str(e)}")
+    elif payload.workflow_yaml:
+        try:
+            wf = parse_workflow_yaml(payload.workflow_yaml)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid workflow YAML: {str(e)}")
     elif payload.workflow_id:
-        target_path = None
+        target_wf = None
         wf_dir = _get_workflows_dir()
         for p in wf_dir.glob("*.yaml"):
             try:
                 candidate = parse_workflow_yaml(p)
                 if candidate.metadata.id == payload.workflow_id:
-                    target_path = p
-                    wf = candidate
+                    target_wf = candidate
                     break
             except Exception:
                 pass
-        if not target_path:
+        if not target_wf:
             raise HTTPException(status_code=404, detail=f"Workflow '{payload.workflow_id}' not found.")
+        wf = target_wf
     else:
-        raise HTTPException(status_code=400, detail="Must provide either workflow_yaml or workflow_id.")
+        raise HTTPException(status_code=400, detail="Must provide workflow_ast, workflow_yaml, or workflow_id.")
 
-    compiler = GraphCompiler(registry=registry)
     try:
-        compiled = compiler.compile(wf)
+        compiled = shared_compiler.compile(wf)
         result = await compiled.ainvoke(payload.input_payload)
+        is_interrupted = "__interrupt__" in result and bool(result["__interrupt__"])
         return {
-            "status": "COMPLETED" if "__interrupt__" not in result or not result["__interrupt__"] else "INTERRUPTED",
-            "final_state": result,
+            "status": "INTERRUPTED" if is_interrupted else "COMPLETED",
+            "thread_id": result.get("__thread_id__"),
+            "final_state": {k: v for k, v in result.items() if k != "__interrupt__"},
             "history": result.get("__history__", []),
             "total_cost_usd": result.get("__sys_total_cost_usd", 0.0),
             "telemetry": result.get("__telemetry__", {}),
@@ -521,6 +665,8 @@ async def execute_workflow(payload: WorkflowExecutePayload) -> Dict[str, Any]:
             "status": "FAILED",
             "error_type": e.__class__.__name__,
             "error_message": str(e),
+            "history": [],
+            "total_cost_usd": 0.0,
+            "telemetry": {},
+            "final_state": {},
         }
-
-

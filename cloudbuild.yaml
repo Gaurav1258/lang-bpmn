@@ -21,9 +21,9 @@ steps:
         echo "STAGE 1: RUNNING FULL AGENT-BPMN QUALITY GATE (50 TESTS)"
         echo "============================================================"
         pip install --no-cache-dir uv
-        uv pip install --system -e ".[dev,engine]"
+        uv pip install --system ".[dev,engine]"
         pytest tests/ -v --tb=short
-        echo ">>> STAGE 1 PASSED: All 50 architectural tests verified."
+        echo ">>> STAGE 1 PASSED: All architectural tests verified."
 
   # ---------------------------------------------------------------------------
   # Step 2: Build Production Docker Container (FastAPI + React Studio SPA)

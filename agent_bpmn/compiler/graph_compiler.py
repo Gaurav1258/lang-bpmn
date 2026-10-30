@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import time
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 import uuid
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
 
 from agent_bpmn.compiler.dmn_compiler import compile_dmn_table_router
+from agent_bpmn.compiler.expression_evaluator import SafeExpressionEvaluator
 from agent_bpmn.compiler.guardrails import (
     BudgetExceededError,
     GuardrailViolationError,
@@ -15,7 +16,7 @@ from agent_bpmn.compiler.guardrails import (
 )
 from agent_bpmn.compiler.semantic_compiler import compile_semantic_router
 from agent_bpmn.dsl.linter import WorkflowLinter
-from agent_bpmn.dsl.schema import NodeType, WorkflowDefinition
+from agent_bpmn.dsl.schema import NodeType, WorkflowDefinition, WorkflowEdge
 from agent_bpmn.runtime.hitl_inbox import ApprovalInboxService, inbox_service as default_inbox_service
 from agent_bpmn.runtime.telemetry import (
     TelemetryAggregator,
@@ -64,13 +65,20 @@ class CompiledWorkflow:
             run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
 
         thread_id = run_config["configurable"]["thread_id"]
+
+        # Register this compiled workflow instance on the inbox service so API routes can resume it
+        if not hasattr(self.inbox_service, "_active_workflows"):
+            setattr(self.inbox_service, "_active_workflows", {})
+        getattr(self.inbox_service, "_active_workflows")[thread_id] = self
+
         t0 = time.perf_counter()
 
         if isinstance(initial_state, Command):
             res = await self.compiled_graph.ainvoke(initial_state, config=run_config)
             elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            status = "INTERRUPTED" if "__interrupt__" in res and res["__interrupt__"] else "COMPLETED"
             self.telemetry_aggregator.record_from_state(
-                self.workflow.metadata.id, res, status="COMPLETED", total_duration_ms=elapsed_ms
+                self.workflow.metadata.id, res, status=status, total_duration_ms=elapsed_ms
             )
             return res
 
@@ -124,7 +132,7 @@ class GraphCompiler:
     Compiles an AgentBPMN declarative WorkflowDefinition AST directly
     into a LangGraph StateGraph execution graph supporting:
     - Domain Blocks with Pydantic contracts
-    - Hybrid Routing (DMN Tables + Semantic Routers)
+    - Hybrid Routing (DMN Tables + Semantic Routers + Conditional Edges)
     - Enterprise Human-in-the-Loop Approval Inboxes with Command(resume=...)
     - Visual Loop & Budget Guardrails (Loop iteration caps & USD spend limits)
     - Process Intelligence Heatmap Telemetry
@@ -154,6 +162,7 @@ class GraphCompiler:
         builder = StateGraph(dict)
         connected_sources = set()
         connected_targets = set()
+        conditional_sources = set()
 
         def make_passthrough_node(node_id: str) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
             def passthrough(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -174,6 +183,9 @@ class GraphCompiler:
                     router_fn, path_map = compile_dmn_table_router(node.dmn_config, table_id=node.id)
                     builder.add_conditional_edges(node.id, router_fn, path_map)
                     connected_sources.add(node.id)
+                    conditional_sources.add(node.id)
+                    for target_key in path_map.keys():
+                        connected_targets.add(target_key)
 
             elif node.type == NodeType.SEMANTIC_ROUTER:
                 builder.add_node(node.id, make_passthrough_node(node.id))
@@ -181,6 +193,9 @@ class GraphCompiler:
                     router_fn, path_map = compile_semantic_router(node.semantic_config, router_id=node.id)
                     builder.add_conditional_edges(node.id, router_fn, path_map)
                     connected_sources.add(node.id)
+                    conditional_sources.add(node.id)
+                    for target_key in path_map.keys():
+                        connected_targets.add(target_key)
 
             elif node.type == NodeType.HUMAN_REVIEW:
                 human_handler = self._create_human_review_node_handler(node, workflow.metadata.id)
@@ -192,14 +207,33 @@ class GraphCompiler:
             else:
                 builder.add_node(node.id, make_passthrough_node(node.id))
 
-        # 2. Wire Standard Directed Edges
+        # 2. Group and Wire Directed / Conditional Edges
+        edges_by_source: Dict[str, List[WorkflowEdge]] = {}
         for edge in workflow.edges:
-            src = START if edge.source == "START" else edge.source
-            tgt = END if edge.target == "END" else edge.target
-
-            builder.add_edge(src, tgt)
-            connected_sources.add(edge.source)
             connected_targets.add(edge.target)
+            if edge.source in conditional_sources:
+                # Already wired via DMN or Semantic Router config; skip duplicate hard edge
+                continue
+            edges_by_source.setdefault(edge.source, []).append(edge)
+
+        for src_id, edge_list in edges_by_source.items():
+            src_node = START if src_id == "START" else src_id
+            connected_sources.add(src_id)
+
+            has_conditions = any(
+                e.condition and e.condition.strip().lower() not in ("", "true", "default", "*")
+                for e in edge_list
+            )
+
+            if not has_conditions or src_id == "START":
+                for edge in edge_list:
+                    tgt_node = END if edge.target == "END" else edge.target
+                    builder.add_edge(src_node, tgt_node)
+            else:
+                # Compile edge conditions into a deterministic LangGraph conditional router
+                router_fn, path_map = self._compile_edge_conditions(src_id, edge_list)
+                builder.add_conditional_edges(src_node, router_fn, path_map)
+                conditional_sources.add(src_id)
 
         # 3. Auto-infer entrypoint if not explicitly defined
         if "START" not in connected_sources:
@@ -224,6 +258,43 @@ class GraphCompiler:
             telemetry_aggregator=self.telemetry_aggregator,
         )
 
+    def _compile_edge_conditions(
+        self,
+        source_id: str,
+        edges: List[WorkflowEdge],
+    ) -> tuple[Callable[[Dict[str, Any]], str], Dict[str, Any]]:
+        """Compiles conditional WorkflowEdge branches from a single source node."""
+        path_map: Dict[str, Any] = {"END": END}
+        for e in edges:
+            path_map[e.target] = END if e.target == "END" else e.target
+            if e.fallback_target:
+                path_map[e.fallback_target] = END if e.fallback_target == "END" else e.fallback_target
+
+        # Keep a local snapshot of edges to avoid closure late-binding issues
+        edge_snapshot = list(edges)
+
+        def edge_router(state: Dict[str, Any]) -> str:
+            fallback_dest: Optional[str] = None
+            for edge in edge_snapshot:
+                cond = (edge.condition or "").strip()
+                if not cond or cond.lower() in ("default", "true", "*", "else"):
+                    fallback_dest = edge.target
+                    continue
+                try:
+                    if SafeExpressionEvaluator.evaluate(cond, state):
+                        return edge.target
+                except Exception:
+                    continue
+
+            if fallback_dest:
+                return fallback_dest
+            for edge in edge_snapshot:
+                if edge.fallback_target:
+                    return edge.fallback_target
+            return "END"
+
+        return edge_router, path_map
+
     def _create_human_review_node_handler(
         self,
         node: Any,
@@ -234,7 +305,7 @@ class GraphCompiler:
         cfg = node.human_review_config
 
         def human_review_handler(state: Dict[str, Any]) -> Any:
-            title = cfg.title if cfg else f"Human Review Required: {node.id}"
+            title = cfg.title if cfg and cfg.title else f"Human Review Required: {node.name or node.id}"
             assigned_role = cfg.assigned_role if cfg else "role:general_operator"
             description = cfg.description if cfg else None
             allowed_actions = cfg.allowed_actions if cfg else ["APPROVE", "REJECT", "EDIT_AND_APPROVE"]
@@ -245,19 +316,27 @@ class GraphCompiler:
             thread_id = state.get("__thread_id__", f"thread_{uuid.uuid4().hex[:8]}")
             clean_state = {k: v for k, v in state.items() if not k.startswith("__")}
 
-            task = inbox.create_task(
-                thread_id=thread_id,
-                workflow_id=workflow_id,
-                node_id=node.id,
-                title=title,
-                assigned_role=assigned_role,
-                state_snapshot=clean_state,
-                description=description,
-                allowed_actions=allowed_actions,
-                sla_timeout_seconds=sla_timeout_seconds,
-                escalation_target=escalation_target,
-                form_fields=form_fields,
-            )
+            # Reuse existing pending task for this (thread_id, node_id) when LangGraph re-runs the node on resume
+            existing_tasks = [
+                t for t in inbox.get_pending_tasks(workflow_id=workflow_id)
+                if t.thread_id == thread_id and t.node_id == node.id
+            ]
+            if existing_tasks:
+                task = existing_tasks[0]
+            else:
+                task = inbox.create_task(
+                    thread_id=thread_id,
+                    workflow_id=workflow_id,
+                    node_id=node.id,
+                    title=title,
+                    assigned_role=assigned_role,
+                    state_snapshot=clean_state,
+                    description=description,
+                    allowed_actions=allowed_actions,
+                    sla_timeout_seconds=sla_timeout_seconds,
+                    escalation_target=escalation_target,
+                    form_fields=form_fields,
+                )
 
             decision = interrupt({
                 "task_id": task.task_id,
@@ -286,6 +365,16 @@ class GraphCompiler:
             history = list(state.get("__history__", []))
             history.append(node.id)
             state_updates["__history__"] = history
+
+            # Record human decision in telemetry so override rates are tracked
+            telemetry = dict(state.get("__telemetry__", {}))
+            telemetry[node.id] = {
+                "block": "human_review",
+                "latency_ms": 0.0,
+                "cost_usd": 0.0,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            state_updates["__telemetry__"] = telemetry
 
             return {**state, **state_updates}
 
@@ -328,6 +417,7 @@ class GraphCompiler:
             for block_param, mapping_spec in node.input_mapping.items():
                 if isinstance(mapping_spec, str):
                     clean_key = mapping_spec.lstrip("$")
+                    is_ref = clean_key.startswith("input.") or clean_key.startswith("state.") or mapping_spec.startswith("$")
                     if clean_key.startswith("input."):
                         clean_key = clean_key.split(".", 1)[1]
                     elif clean_key.startswith("state."):
@@ -337,7 +427,8 @@ class GraphCompiler:
                         payload[block_param] = state[clean_key]
                     elif mapping_spec in state:
                         payload[block_param] = state[mapping_spec]
-                    else:
+                    elif not is_ref:
+                        # Only treat as a literal constant if it wasn't prefixed with input./state./$
                         payload[block_param] = mapping_spec
                 else:
                     payload[block_param] = mapping_spec
@@ -353,16 +444,22 @@ class GraphCompiler:
             elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
             output_dict = output_model.model_dump()
 
-            # 5. Map output attributes back to graph state
+            # 5. Map output attributes back to graph state (supports both standard & reversed mappings gracefully)
             if node.output_mapping:
-                for block_attr, target_state_key in node.output_mapping.items():
-                    if block_attr in output_dict:
-                        state_updates[target_state_key] = output_dict[block_attr]
+                for map_key, map_val in node.output_mapping.items():
+                    if map_key in output_dict:
+                        # Standard: {block_output_attr: target_state_key}
+                        state_updates[map_val] = output_dict[map_key]
+                    elif map_val in output_dict:
+                        # Fallback if user/template wrote {target_state_key: block_output_attr}
+                        state_updates[map_key] = output_dict[map_val]
             else:
                 state_updates[node.id] = output_dict
-                for k, v in output_dict.items():
-                    if k not in state_updates:
-                        state_updates[k] = v
+
+            # Always expose raw output fields if not already overwritten so downstream nodes can access them
+            for k, v in output_dict.items():
+                if k not in state_updates:
+                    state_updates[k] = v
 
             # 6. Telemetry tracking
             telemetry = dict(state.get("__telemetry__", {}))

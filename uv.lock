@@ -12,6 +12,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn" },
@@ -33,15 +36,18 @@ engine = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "fastapi", specifier = ">=0.110.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.110.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-core", marker = "extra == 'engine'", specifier = ">=0.3.0" },
+    { name = "langgraph", specifier = ">=0.2.0" },
     { name = "langgraph", marker = "extra == 'engine'", specifier = ">=0.2.0" },
     { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pyyaml", specifier = ">=6.0.1" },
-    { name = "uvicorn", specifier = ">=0.54.0" },
+    { name = "uvicorn", specifier = ">=0.29.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.29.0" },
 ]
 provides-extras = ["dev", "engine", "api"]

@@ -53,6 +53,15 @@ class ApprovalInboxService:
 
     def __init__(self) -> None:
         self._tasks: Dict[str, ApprovalTask] = {}
+        self._active_workflows: Dict[str, Any] = {}
+
+    def register_active_workflow(self, thread_id: str, compiled_workflow: Any) -> None:
+        """Stores the compiled workflow instance so paused threads can be resumed via API."""
+        self._active_workflows[thread_id] = compiled_workflow
+
+    def get_active_workflow(self, thread_id: str) -> Optional[Any]:
+        """Retrieves a previously registered compiled workflow for a paused thread."""
+        return self._active_workflows.get(thread_id)
 
     def create_task(
         self,
@@ -169,6 +178,62 @@ class ApprovalInboxService:
             }
             cfg = {"configurable": {"thread_id": task.thread_id}}
             resumed_state = await compiled_workflow.ainvoke(
+                Command(resume=resume_payload),
+                config=cfg,
+            )
+
+        return resumed_state
+
+    def submit_decision_sync(
+        self,
+        task_id: str,
+        action: str,
+        reviewer: str,
+        comments: Optional[str] = None,
+        updated_fields: Optional[Dict[str, Any]] = None,
+        compiled_workflow: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Synchronous version of submit_decision.
+        Actions an approval task and dispatches Command(resume=...) to resume LangGraph.
+        """
+        task = self.get_task(task_id)
+        if task.status != TaskStatus.PENDING:
+            raise ValueError(f"Task '{task_id}' is already {task.status.value} and cannot be actioned.")
+
+        action_upper = action.upper()
+        if action_upper not in task.allowed_actions:
+            raise ValueError(f"Action '{action}' is not in allowed actions: {task.allowed_actions}")
+
+        # Update task record
+        now = datetime.now(timezone.utc)
+        if action_upper == "APPROVE":
+            task.status = TaskStatus.APPROVED
+        elif action_upper == "REJECT":
+            task.status = TaskStatus.REJECTED
+        elif action_upper == "EDIT_AND_APPROVE":
+            task.status = TaskStatus.EDITED_AND_APPROVED
+        else:
+            task.status = TaskStatus.APPROVED
+
+        task.decision_action = action_upper
+        task.decided_by = reviewer
+        task.decided_at = now
+        task.reviewer_comments = comments
+        task.updated_fields = updated_fields or {}
+
+        # If a compiled LangGraph workflow instance is provided, resume execution
+        resumed_state: Dict[str, Any] = {}
+        if compiled_workflow is not None:
+            resume_payload = {
+                "action": action_upper,
+                "reviewer": reviewer,
+                "comments": comments,
+                "updated_fields": task.updated_fields,
+                "timestamp": now.isoformat(),
+            }
+            cfg = {"configurable": {"thread_id": task.thread_id}}
+            resumed_state = compiled_workflow.invoke(
                 Command(resume=resume_payload),
                 config=cfg,
             )

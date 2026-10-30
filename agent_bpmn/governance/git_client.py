@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
@@ -20,7 +21,7 @@ class GitGovernanceClient:
     """
 
     def __init__(self, target_dir: Optional[Path] = None) -> None:
-        self.target_dir = target_dir or Path("examples/sample_workflows")
+        self.target_dir = target_dir or Path(os.getenv("WORKFLOWS_DIR", "workflows"))
         self._proposals: Dict[str, ChangeProposal] = {}
         self._pr_counter = 100
 

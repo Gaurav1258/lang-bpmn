@@ -126,6 +126,101 @@ class SimulationEngine:
             case_results=case_results,
         )
 
+    def run_simulation_sync(
+        self,
+        candidate_workflow: WorkflowDefinition,
+        dataset: SimulationDataset,
+        mock_blocks: Optional[Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = None,
+        simulation_id: Optional[str] = None,
+    ) -> SimulationReport:
+        """
+        Synchronous version of run_simulation.
+        Executes all historical cases against the candidate workflow using sync invoke.
+        """
+        sim_id = simulation_id or f"sim_{uuid.uuid4().hex[:8]}"
+        compiler = GraphCompiler(registry=self.registry)
+        compiled = compiler.compile(candidate_workflow)
+
+        case_results: List[CandidateCaseResult] = []
+        schema_failures = 0
+        guardrail_trips = 0
+        success_count = 0
+        failure_count = 0
+
+        for case in dataset.cases:
+            t0 = time.perf_counter()
+            payload = dict(case.input_payload)
+
+            try:
+                res = compiled.invoke(payload)
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+                route = list(res.get("__history__", []))
+                terminal = route[-1] if route else "END"
+                cost = float(res.get("__sys_total_cost_usd", 0.0))
+
+                is_interrupted = "__interrupt__" in res and bool(res["__interrupt__"])
+                status = "INTERRUPTED" if is_interrupted else "SUCCESS"
+                success_count += 1
+
+                case_results.append(
+                    CandidateCaseResult(
+                        case_id=case.case_id,
+                        status=status,
+                        route_taken=route,
+                        terminal_node=terminal,
+                        final_state=res,
+                        cost_usd=cost,
+                        duration_ms=elapsed_ms,
+                    )
+                )
+
+            except GuardrailViolationError as g_err:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                guardrail_trips += 1
+                failure_count += 1
+                case_results.append(
+                    CandidateCaseResult(
+                        case_id=case.case_id,
+                        status="GUARDRAIL_TRIPPED",
+                        route_taken=[],
+                        terminal_node=getattr(g_err, "node_id", "GUARDRAIL"),
+                        cost_usd=getattr(g_err, "current_cost", 0.0),
+                        duration_ms=elapsed_ms,
+                        error_message=str(g_err),
+                    )
+                )
+
+            except Exception as exc:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                failure_count += 1
+                err_msg = str(exc)
+                if "validation" in err_msg.lower() or "schema" in err_msg.lower():
+                    schema_failures += 1
+
+                case_results.append(
+                    CandidateCaseResult(
+                        case_id=case.case_id,
+                        status="FAILED",
+                        route_taken=[],
+                        terminal_node="ERROR",
+                        cost_usd=0.0,
+                        duration_ms=elapsed_ms,
+                        error_message=err_msg,
+                    )
+                )
+
+        diff = self._calculate_impact_diff(dataset, case_results, schema_failures, guardrail_trips)
+
+        return SimulationReport(
+            simulation_id=sim_id,
+            baseline_workflow_id=dataset.workflow_id,
+            candidate_workflow_id=candidate_workflow.metadata.id,
+            candidate_version=candidate_workflow.metadata.version,
+            diff=diff,
+            case_results=case_results,
+        )
+
     def _calculate_impact_diff(
         self,
         dataset: SimulationDataset,

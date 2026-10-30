@@ -22,16 +22,19 @@ WORKDIR /app
 # Install uv for fast, reliable package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy project definition and install dependencies
+# Copy project definition and source code, then install
 COPY pyproject.toml ./
-RUN uv pip install --system -e .
-
-# Copy only essential production code (no examples or test artifacts)
 COPY agent_bpmn/ /app/agent_bpmn/
+RUN uv pip install --system .
+
+# Copy application entrypoint
 COPY run_studio.py /app/run_studio.py
 
 # Copy built frontend assets from Stage 1 into studio/dist
 COPY --from=frontend-builder /app/studio/dist /app/studio/dist
+
+# Create workflows directory for runtime CRUD
+RUN mkdir -p /app/workflows
 
 # Cloud Run injects PORT (default 8080)
 ENV PORT=8080
