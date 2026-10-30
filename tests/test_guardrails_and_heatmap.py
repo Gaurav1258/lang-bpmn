@@ -16,7 +16,7 @@ from agent_bpmn.dsl import (
     parse_workflow_yaml,
 )
 from agent_bpmn.runtime import NodeTelemetryRecord, RunTelemetryRecord, TelemetryAggregator
-import examples.sample_blocks  # Registers domain blocks
+import agent_bpmn.blocks.builtin  # Registers domain blocks
 
 
 def test_step5_1_budget_cap_guardrail_trips_on_overspend():

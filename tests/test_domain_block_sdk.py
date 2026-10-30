@@ -8,7 +8,7 @@ from agent_bpmn.sdk import (
     CapabilityRegistry,
     domain_block,
 )
-from examples.sample_blocks import (
+from agent_bpmn.blocks.builtin import (
     SanctionCheckInput,
     SanctionCheckOutput,
     screen_sanctions,

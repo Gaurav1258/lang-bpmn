@@ -5,7 +5,7 @@ import pytest
 from agent_bpmn.compiler import GraphCompiler
 from agent_bpmn.dsl import parse_workflow_yaml
 from agent_bpmn.runtime import ApprovalInboxService, TaskStatus
-import examples.sample_blocks  # Registers domain blocks
+import agent_bpmn.blocks.builtin  # Registers domain blocks
 
 
 def test_step4_1_human_review_schema_validation():

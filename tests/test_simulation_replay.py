@@ -13,7 +13,7 @@ from agent_bpmn.simulation import (
     SimulationImpactDiff,
     SimulationReport,
 )
-import examples.sample_blocks  # Registers domain blocks
+import agent_bpmn.blocks.builtin  # Registers domain blocks
 
 
 def _create_mock_production_dataset() -> SimulationDataset:

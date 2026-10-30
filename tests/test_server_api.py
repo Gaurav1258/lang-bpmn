@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_bpmn.server.app import app
-import examples.sample_blocks  # Ensures blocks are registered
+import agent_bpmn.blocks.builtin  # Ensures blocks are registered
 
 
 @pytest.fixture

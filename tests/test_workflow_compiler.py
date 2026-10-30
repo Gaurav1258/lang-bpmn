@@ -13,7 +13,7 @@ from agent_bpmn.dsl import (
     parse_workflow_yaml,
 )
 from agent_bpmn.sdk import registry
-import examples.sample_blocks  # Ensures sample blocks are in the registry
+import agent_bpmn.blocks.builtin  # Ensures sample blocks are in the registry
 
 
 def test_step2_1_yaml_parser_loads_valid_ast():

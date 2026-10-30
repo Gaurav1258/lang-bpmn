@@ -22,7 +22,7 @@ steps:
         echo "============================================================"
         pip install --no-cache-dir uv
         uv pip install --system ".[dev,engine]"
-        pytest tests/ -v --tb=short
+        python -m pytest tests/ -v --tb=short
         echo ">>> STAGE 1 PASSED: All architectural tests verified."
 
   # ---------------------------------------------------------------------------

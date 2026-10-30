@@ -15,7 +15,7 @@ from agent_bpmn.dsl import (
     SemanticRouterConfig,
     parse_workflow_yaml,
 )
-import examples.sample_blocks  # Registers domain blocks
+import agent_bpmn.blocks.builtin  # Registers domain blocks
 
 
 # ------------------------------------------------------------------------------
