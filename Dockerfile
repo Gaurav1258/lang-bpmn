@@ -27,6 +27,9 @@ COPY pyproject.toml README.md ./
 COPY agent_bpmn/ /app/agent_bpmn/
 RUN uv pip install --system .
 
+# Build distributable wheel for downstream microservices & SCF engine
+RUN uv pip install --system hatchling && uv build --no-build-isolation --out-dir /app/dist
+
 # Copy application entrypoint
 COPY run_studio.py /app/run_studio.py
 

@@ -53,7 +53,6 @@ class CapabilityRegistry:
     ) -> None:
         block_id = contract.metadata.id
         if block_id in self._blocks:
-            # Overwrite or warn; allow hot reloading in dev
             pass
         
         is_async = inspect.iscoroutinefunction(handler)
@@ -109,11 +108,9 @@ class CapabilityRegistry:
             path.write_text(json_str, encoding="utf-8")
         return json_str
 
-    async def execute(self, block_id: str, payload: Union[Dict[str, Any], BaseModel]) -> BaseModel:
+    def execute_sync(self, block_id: str, payload: Union[Dict[str, Any], BaseModel]) -> BaseModel:
         """
-        Executes a registered domain block with strict runtime schema validation.
-        Validates the input payload against the input model, calls the underlying handler,
-        and validates the return value against the output model.
+        Synchronously executes a registered domain block with strict runtime schema validation.
         """
         block = self.get(block_id)
 
@@ -138,9 +135,63 @@ class CapabilityRegistry:
         # 2. Execution
         try:
             if block.is_async:
-                result = await block.handler(validated_input)
-            else:
-                result = block.handler(validated_input)
+                raise BlockExecutionError(block_id, "Cannot execute async block synchronously")
+            result = block.handler(validated_input)
+        except Exception as e:
+            raise BlockExecutionError(
+                block_id=block_id,
+                message=f"Handler execution raised exception: {str(e)}",
+            ) from e
+
+        # 3. Output validation
+        if isinstance(result, block.output_model):
+            validated_output = result
+        elif isinstance(result, dict):
+            try:
+                validated_output = block.output_model.model_validate(result)
+            except ValidationError as e:
+                raise BlockValidationError(
+                    block_id=block_id,
+                    message=f"Output failed schema validation: {e}",
+                    details=e.errors(),
+                ) from e
+        else:
+            raise BlockValidationError(
+                block_id=block_id,
+                message=f"Expected output of type {block.output_model.__name__} or dict, got {type(result).__name__}",
+            )
+
+        return validated_output
+
+    async def execute(self, block_id: str, payload: Union[Dict[str, Any], BaseModel]) -> BaseModel:
+        """
+        Executes a registered domain block with strict runtime schema validation.
+        """
+        block = self.get(block_id)
+        if not block.is_async:
+            return self.execute_sync(block_id, payload)
+
+        # 1. Input validation
+        if isinstance(payload, block.input_model):
+            validated_input = payload
+        elif isinstance(payload, dict):
+            try:
+                validated_input = block.input_model.model_validate(payload)
+            except ValidationError as e:
+                raise BlockValidationError(
+                    block_id=block_id,
+                    message=f"Input failed schema validation: {e}",
+                    details=e.errors(),
+                ) from e
+        else:
+            raise BlockValidationError(
+                block_id=block_id,
+                message=f"Expected input of type {block.input_model.__name__} or dict, got {type(payload).__name__}",
+            )
+
+        # 2. Execution
+        try:
+            result = await block.handler(validated_input)
         except Exception as e:
             raise BlockExecutionError(
                 block_id=block_id,
@@ -173,4 +224,3 @@ class CapabilityRegistry:
 
 # Default singleton instance
 registry = CapabilityRegistry()
-

@@ -116,8 +116,18 @@ class SafeExpressionEvaluator:
         if isinstance(node, (ast.List, ast.Tuple)):
             return [cls._eval_node(elt, state) for elt in node.elts]
 
-        # Forbid all other node types (Call, Attribute, Import, Lambda, etc.)
+        # Safe attribute access: e.g. "risk_profile.sanctions_cleared" or "cash_forecast.liquidity_status"
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
+                raise SafeEvaluationError(f"Private attribute '{node.attr}' access is forbidden.")
+            val = cls._eval_node(node.value, state)
+            if val is None:
+                return None
+            if isinstance(val, dict):
+                return val.get(node.attr)
+            return getattr(val, node.attr, None)
+
+        # Forbid all other node types (Call, Import, Lambda, etc.)
         raise SafeEvaluationError(
             f"Security Violation: Node type '{type(node).__name__}' is forbidden in safe business expressions."
         )
-

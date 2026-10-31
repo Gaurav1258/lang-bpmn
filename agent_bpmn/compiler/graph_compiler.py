@@ -101,12 +101,12 @@ class CompiledWorkflow:
         )
         return res
 
-    def invoke(
+    def _invoke_via_async(
         self,
         initial_state: Union[Dict[str, Any], Command],
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Synchronously executes the compiled workflow, bridging to async execution."""
+        """Bridges sync invoke to async ainvoke using ThreadPoolExecutor if an event loop is running."""
         import asyncio
         import concurrent.futures
 
@@ -121,6 +121,135 @@ class CompiledWorkflow:
                 return future.result()
         else:
             return asyncio.run(self.ainvoke(initial_state, config=config))
+
+    def invoke(
+        self,
+        initial_state: Union[Dict[str, Any], Command],
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Synchronously executes the compiled workflow, attempting direct sync invocation first."""
+        run_config = dict(config or {})
+        if "configurable" not in run_config:
+            run_config["configurable"] = {}
+        if "thread_id" not in run_config["configurable"]:
+            run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
+
+        thread_id = run_config["configurable"]["thread_id"]
+        if not hasattr(self.inbox_service, "_active_workflows"):
+            setattr(self.inbox_service, "_active_workflows", {})
+        getattr(self.inbox_service, "_active_workflows")[thread_id] = self
+
+        t0 = time.perf_counter()
+
+        if isinstance(initial_state, Command):
+            try:
+                res = self.compiled_graph.invoke(initial_state, config=run_config)
+            except Exception as e:
+                if any(x in type(e).__name__.lower() for x in ("async", "coroutine")) or "ainvoke" in str(e).lower():
+                    return self._invoke_via_async(initial_state, config=run_config)
+                raise
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            status = "INTERRUPTED" if "__interrupt__" in res and res["__interrupt__"] else "COMPLETED"
+            self.telemetry_aggregator.record_from_state(
+                self.workflow.metadata.id, res, status=status, total_duration_ms=elapsed_ms
+            )
+            return res
+
+        state_payload = dict(initial_state)
+        state_payload["__thread_id__"] = thread_id
+        if "__telemetry__" not in state_payload:
+            state_payload["__telemetry__"] = {}
+        if "__history__" not in state_payload:
+            state_payload["__history__"] = []
+        if "__sys_node_visits" not in state_payload:
+            state_payload["__sys_node_visits"] = {}
+        if "__sys_total_cost_usd" not in state_payload:
+            state_payload["__sys_total_cost_usd"] = 0.0
+
+        try:
+            res = self.compiled_graph.invoke(state_payload, config=run_config)
+        except Exception as e:
+            if any(x in type(e).__name__.lower() for x in ("async", "coroutine")) or "ainvoke" in str(e).lower():
+                return self._invoke_via_async(initial_state, config=run_config)
+            raise
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        status = "INTERRUPTED" if "__interrupt__" in res and res["__interrupt__"] else "COMPLETED"
+        self.telemetry_aggregator.record_from_state(
+            self.workflow.metadata.id, res, status=status, total_duration_ms=elapsed_ms
+        )
+        return res
+
+    async def astream(
+        self,
+        initial_state: Union[Dict[str, Any], Command],
+        config: Optional[Dict[str, Any]] = None,
+        stream_mode: str = "updates",
+        **kwargs: Any,
+    ):
+        """Asynchronously streams workflow execution deltas/events (supports updates, values, etc.)."""
+        run_config = dict(config or {})
+        if "configurable" not in run_config:
+            run_config["configurable"] = {}
+        if "thread_id" not in run_config["configurable"]:
+            run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
+
+        thread_id = run_config["configurable"]["thread_id"]
+        if not hasattr(self.inbox_service, "_active_workflows"):
+            setattr(self.inbox_service, "_active_workflows", {})
+        getattr(self.inbox_service, "_active_workflows")[thread_id] = self
+
+        if isinstance(initial_state, Command):
+            async for chunk in self.compiled_graph.astream(initial_state, config=run_config, stream_mode=stream_mode, **kwargs):
+                yield chunk
+            return
+
+        state_payload = dict(initial_state)
+        state_payload["__thread_id__"] = thread_id
+        if "__telemetry__" not in state_payload:
+            state_payload["__telemetry__"] = {}
+        if "__history__" not in state_payload:
+            state_payload["__history__"] = []
+        if "__sys_node_visits" not in state_payload:
+            state_payload["__sys_node_visits"] = {}
+        if "__sys_total_cost_usd" not in state_payload:
+            state_payload["__sys_total_cost_usd"] = 0.0
+
+        async for chunk in self.compiled_graph.astream(state_payload, config=run_config, stream_mode=stream_mode, **kwargs):
+            yield chunk
+
+    def stream(
+        self,
+        initial_state: Union[Dict[str, Any], Command],
+        config: Optional[Dict[str, Any]] = None,
+        stream_mode: str = "updates",
+        **kwargs: Any,
+    ):
+        """Synchronously streams workflow execution deltas/events."""
+        run_config = dict(config or {})
+        if "configurable" not in run_config:
+            run_config["configurable"] = {}
+        if "thread_id" not in run_config["configurable"]:
+            run_config["configurable"]["thread_id"] = f"run_{uuid.uuid4().hex[:10]}"
+
+        if isinstance(initial_state, Command):
+            for chunk in self.compiled_graph.stream(initial_state, config=run_config, stream_mode=stream_mode, **kwargs):
+                yield chunk
+            return
+
+        state_payload = dict(initial_state)
+        state_payload["__thread_id__"] = run_config["configurable"]["thread_id"]
+        if "__telemetry__" not in state_payload:
+            state_payload["__telemetry__"] = {}
+        if "__history__" not in state_payload:
+            state_payload["__history__"] = []
+        if "__sys_node_visits" not in state_payload:
+            state_payload["__sys_node_visits"] = {}
+        if "__sys_total_cost_usd" not in state_payload:
+            state_payload["__sys_total_cost_usd"] = 0.0
+
+        for chunk in self.compiled_graph.stream(state_payload, config=run_config, stream_mode=stream_mode, **kwargs):
+            yield chunk
 
     def get_heatmap(self) -> WorkflowHeatmap:
         """Computes and returns the visual Process Intelligence Heatmap for this workflow."""
@@ -144,11 +273,13 @@ class GraphCompiler:
         checkpointer: Optional[BaseCheckpointSaver] = None,
         inbox_service: Optional[ApprovalInboxService] = None,
         telemetry_aggregator: Optional[TelemetryAggregator] = None,
+        state_schema: Optional[Any] = None,
     ) -> None:
         self.registry = registry if registry is not None else default_registry
         self.checkpointer = checkpointer or MemorySaver()
         self.inbox_service = inbox_service or default_inbox_service
         self.telemetry_aggregator = telemetry_aggregator or default_telemetry_aggregator
+        self.state_schema = state_schema
         self.linter = WorkflowLinter(registry=self.registry)
 
     def compile(self, workflow: WorkflowDefinition, validate: bool = True) -> CompiledWorkflow:
@@ -159,7 +290,7 @@ class GraphCompiler:
             lint_res = self.linter.lint(workflow)
             lint_res.raise_if_invalid()
 
-        builder = StateGraph(dict)
+        builder = StateGraph(self.state_schema or dict)
         connected_sources = set()
         connected_targets = set()
         conditional_sources = set()
@@ -385,11 +516,12 @@ class GraphCompiler:
         node: Any,
         workflow: WorkflowDefinition,
     ) -> Callable[[Dict[str, Any]], Any]:
-        """Creates an async LangGraph node function with strict loop & budget guardrails."""
+        """Creates an async or sync LangGraph node function with strict loop & budget guardrails."""
         block_id = node.block
         reg = self.registry
+        registered = reg.get(block_id)
 
-        async def block_node_handler(state: Dict[str, Any]) -> Dict[str, Any]:
+        def _prepare_node_execution(state: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any], float]:
             state_updates: Dict[str, Any] = {}
 
             # 1. Loop Guardrail Check
@@ -403,7 +535,6 @@ class GraphCompiler:
                 raise LoopIterationLimitExceeded(node.id, current_visits, max_visits)
 
             # 2. Budget Guardrail Check
-            registered = reg.get(block_id)
             node_cost = registered.contract.metadata.estimated_cost_usd
             current_total_cost = float(state.get("__sys_total_cost_usd", 0.0)) + node_cost
             state_updates["__sys_total_cost_usd"] = round(current_total_cost, 6)
@@ -428,7 +559,6 @@ class GraphCompiler:
                     elif mapping_spec in state:
                         payload[block_param] = state[mapping_spec]
                     elif not is_ref:
-                        # Only treat as a literal constant if it wasn't prefixed with input./state./$
                         payload[block_param] = mapping_spec
                 else:
                     payload[block_param] = mapping_spec
@@ -438,27 +568,39 @@ class GraphCompiler:
                 if prop not in payload and prop in state:
                     payload[prop] = state[prop]
 
-            # 4. Execute block with strict runtime Pydantic validation
-            t0 = time.perf_counter()
-            output_model = await reg.execute(block_id, payload)
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            output_dict = output_model.model_dump()
+            return state_updates, payload, node_cost
 
-            # 5. Map output attributes back to graph state (supports both standard & reversed mappings gracefully)
+        def _finalize_node_state(
+            state: Dict[str, Any],
+            state_updates: Dict[str, Any],
+            output_model: Any,
+            elapsed_ms: float,
+            node_cost: float,
+        ) -> Dict[str, Any]:
+            if hasattr(output_model, "model_fields"):
+                output_dict = {k: getattr(output_model, k) for k in output_model.model_fields}
+            elif hasattr(output_model, "__dict__"):
+                output_dict = dict(output_model.__dict__)
+            elif isinstance(output_model, dict):
+                output_dict = output_model
+            else:
+                output_dict = output_model.model_dump()
+
+            # 5. Map output attributes back to graph state
             if node.output_mapping:
                 for map_key, map_val in node.output_mapping.items():
                     if map_key in output_dict:
-                        # Standard: {block_output_attr: target_state_key}
                         state_updates[map_val] = output_dict[map_key]
                     elif map_val in output_dict:
-                        # Fallback if user/template wrote {target_state_key: block_output_attr}
                         state_updates[map_key] = output_dict[map_val]
             else:
                 state_updates[node.id] = output_dict
 
-            # Always expose raw output fields if not already overwritten so downstream nodes can access them
+            # Expose raw output fields
             for k, v in output_dict.items():
-                if k not in state_updates:
+                if k in ("audit_trail", "errors") and isinstance(v, list) and k in state and isinstance(state[k], list):
+                    state_updates[k] = list(state[k]) + [item for item in v if item not in state[k]]
+                elif k not in state_updates:
                     state_updates[k] = v
 
             # 6. Telemetry tracking
@@ -478,4 +620,21 @@ class GraphCompiler:
 
             return {**state, **state_updates}
 
-        return block_node_handler
+        if not registered.is_async:
+            def sync_block_node_handler(state: Dict[str, Any]) -> Dict[str, Any]:
+                state_updates, payload, node_cost = _prepare_node_execution(state)
+                t0 = time.perf_counter()
+                output_model = reg.execute_sync(block_id, payload)
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                return _finalize_node_state(state, state_updates, output_model, elapsed_ms, node_cost)
+
+            return sync_block_node_handler
+        else:
+            async def async_block_node_handler(state: Dict[str, Any]) -> Dict[str, Any]:
+                state_updates, payload, node_cost = _prepare_node_execution(state)
+                t0 = time.perf_counter()
+                output_model = await reg.execute(block_id, payload)
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                return _finalize_node_state(state, state_updates, output_model, elapsed_ms, node_cost)
+
+            return async_block_node_handler

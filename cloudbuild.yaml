@@ -18,7 +18,7 @@ steps:
       - |
         set -e
         echo "============================================================"
-        echo "STAGE 1: RUNNING FULL AGENT-BPMN QUALITY GATE (50 TESTS)"
+        echo "STAGE 1: RUNNING FULL AGENT-BPMN QUALITY GATE"
         echo "============================================================"
         pip install --no-cache-dir uv
         uv pip install --system ".[dev,engine]"
@@ -36,6 +36,8 @@ steps:
       - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
       - '-t'
       - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:$COMMIT_SHA'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:$BUILD_ID'
       - '-f'
       - 'Dockerfile'
       - '.'
@@ -47,7 +49,8 @@ steps:
     id: 'stage-3-push-image-to-registry'
     args:
       - 'push'
-      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+      - '--all-tags'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn'
 
   # ---------------------------------------------------------------------------
   # Step 4: Deploy to Google Cloud Run (agent-bpmn)
@@ -67,9 +70,11 @@ steps:
       - '--allow-unauthenticated'
       - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=$_REGION,ENVIRONMENT=production'
 
-# Images registered in Artifact Registry
+# Images registered in Artifact Registry (automatically pushed on each run)
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:latest'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:$COMMIT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn:$BUILD_ID'
 
 substitutions:
   _REGION: 'us-central1'
@@ -80,4 +85,3 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 timeout: '1200s'
-
