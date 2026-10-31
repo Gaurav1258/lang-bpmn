@@ -23,7 +23,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Copy project definition and source code, then install
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY agent_bpmn/ /app/agent_bpmn/
 RUN uv pip install --system .
 
