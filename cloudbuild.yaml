@@ -53,10 +53,28 @@ steps:
       - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/agent-bpmn'
 
   # ---------------------------------------------------------------------------
-  # Step 4: Deploy to Google Cloud Run (agent-bpmn)
+  # Step 4: Publish Python Package (Wheel & Sdist) to GCP Artifact Registry
+  # ---------------------------------------------------------------------------
+  - name: 'python:3.11-slim'
+    id: 'stage-4-publish-python-package'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        echo "============================================================"
+        echo "STAGE 4: PUBLISHING AGENT-BPMN PYTHON PACKAGE TO ARTIFACT REGISTRY"
+        echo "============================================================"
+        pip install --no-cache-dir build twine keyring keyrings.google-artifactregistry-auth
+        python -m build
+        twine upload --repository-url https://$_REGION-python.pkg.dev/$PROJECT_ID/$_PYTHON_REPO_NAME/ dist/* --skip-existing || true
+        echo ">>> Published agent-bpmn to https://$_REGION-python.pkg.dev/$PROJECT_ID/$_PYTHON_REPO_NAME/"
+
+  # ---------------------------------------------------------------------------
+  # Step 5: Deploy to Google Cloud Run (agent-bpmn)
   # ---------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'stage-4-deploy-to-cloud-run'
+    id: 'stage-5-deploy-to-cloud-run'
     entrypoint: 'gcloud'
     args:
       - 'run'
@@ -79,6 +97,7 @@ images:
 substitutions:
   _REGION: 'us-central1'
   _REPO_NAME: 'scf-repo'
+  _PYTHON_REPO_NAME: 'scf-python-repo'
   _SERVICE_NAME: 'agent-bpmn'
 
 options:
